@@ -661,6 +661,8 @@ BUILD_IPFW_MODULE_FALSE
 BUILD_IPFW_MODULE_TRUE
 BUILD_DUMP_MODULE_FALSE
 BUILD_DUMP_MODULE_TRUE
+BUILD_DPDK_MODULE_FALSE
+BUILD_DPDK_MODULE_TRUE
 BUILD_AFPACKET_MODULE_FALSE
 BUILD_AFPACKET_MODULE_TRUE
 V_YACC
@@ -799,8 +801,11 @@ with_libpcap_libraries
 with_dnet_includes
 with_dnet_libraries
 with_netmap_includes
+with_dpdk_includes
+with_dpdk_libraries
 enable_bundled_modules
 enable_afpacket_module
+enable_dpdk_module
 enable_dump_module
 enable_ipfw_module
 enable_ipq_module
@@ -1454,6 +1459,7 @@ Optional Features:
                           default
   --disable-afpacket-module
                           don't build the bundled AFPacket module
+  --disable-dpdk-module   don't build the bundled dpdk module
   --disable-dump-module   don't build the bundled Dump module
   --disable-ipfw-module   don't build the bundled IPFW module
   --disable-ipq-module    don't build the bundled IPQ module
@@ -1479,6 +1485,8 @@ Optional Packages:
   --with-dnet-includes=DIR    dnet include directory
   --with-dnet-libraries=DIR   dnet library directory
   --with-netmap-includes=DIR    netmap include directory
+  --with-dpdk-includes=DIR    dpdk include directory
+  --with-dpdk-libraries=DIR    dpdk library directory
 
 Some influential environment variables:
   CC          C compiler command
@@ -12887,6 +12895,32 @@ if test "x$with_netmap_includes" != "xno"; then
     CPPFLAGS="${CPPFLAGS} -I${with_netmap_includes}"
 fi
 
+
+# Check whether --with-dpdk_includes was given.
+if test "${with_dpdk_includes+set}" = set; then :
+  withval=$with_dpdk_includes; with_dpdk_includes="$withval"
+else
+  with_dpdk_includes="no"
+fi
+
+
+if test "x$with_dpdk_includes" != "xno"; then
+    CPPFLAGS="${CPPFLAGS} -I${with_dpdk_includes}"
+fi
+
+
+# Check whether --with-dpdk_libraries was given.
+if test "${with_dpdk_libraries+set}" = set; then :
+  withval=$with_dpdk_libraries; with_dpdk_libraries="$withval"
+else
+  with_dpdk_libraries="no"
+fi
+
+
+if test "x$with_dpdk_libraries" != "xno"; then
+    DPDK_LDFLAGS="-L${with_dpdk_libraries}"
+fi
+
 DEFAULT_ENABLE=yes
 
 # Modules configuration
@@ -12972,6 +13006,38 @@ else
   BUILD_AFPACKET_MODULE_TRUE='#'
   BUILD_AFPACKET_MODULE_FALSE=
 fi
+
+
+# DPDK Module
+# Check whether --enable-dpdk-module was given.
+if test "${enable_dpdk_module+set}" = set; then :
+  enableval=$enable_dpdk_module; enable_dpdk_module="$enableval"
+else
+  enable_dpdk_module="$DEFAULT_ENABLE"
+fi
+
+if test "$enable_dpdk_module" = yes; then
+    ac_fn_c_check_header_mongrel "$LINENO" "rte_config.h" "ac_cv_header_rte_config_h" "$ac_includes_default"
+if test "x$ac_cv_header_rte_config_h" = xyes; then :
+
+else
+  enable_dpdk_module=no
+fi
+
+
+    if test "$enable_dpdk_module" = yes; then
+        STATIC_LIBS="${STATIC_LIBS} -lsfbpf ${DPDK_LDFLAGS} -ldpdk -lpthread"
+        CFLAGS="${CFLAGS} -std=gnu99 -Wno-pedantic"
+    fi
+fi
+ if test "$enable_dpdk_module" = yes; then
+  BUILD_DPDK_MODULE_TRUE=
+  BUILD_DPDK_MODULE_FALSE='#'
+else
+  BUILD_DPDK_MODULE_TRUE='#'
+  BUILD_DPDK_MODULE_FALSE=
+fi
+
 
 
 # Dump Module
@@ -13513,6 +13579,7 @@ fi
 
  if test "$enable_afpacket_module" = yes -o \
                                       "$enable_dump_module" = yes -o \
+				      "$enable_dpdk_module" = yes -o \
                                       "$enable_ipfw_module" = yes -o \
                                       "$enable_ipq_module" = yes -o \
                                       "$enable_nfq_module" = yes -o \
@@ -14134,6 +14201,10 @@ if test -z "${BUILD_AFPACKET_MODULE_TRUE}" && test -z "${BUILD_AFPACKET_MODULE_F
   as_fn_error $? "conditional \"BUILD_AFPACKET_MODULE\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
+if test -z "${BUILD_DPDK_MODULE_TRUE}" && test -z "${BUILD_DPDK_MODULE_FALSE}"; then
+  as_fn_error $? "conditional \"BUILD_DPDK_MODULE\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
 if test -z "${BUILD_DUMP_MODULE_TRUE}" && test -z "${BUILD_DUMP_MODULE_FALSE}"; then
   as_fn_error $? "conditional \"BUILD_DUMP_MODULE\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
@@ -14588,9 +14659,9 @@ esac
 
 cat >>$CONFIG_STATUS <<_ACEOF || ac_write_fail=1
 # Files that config.status was made for.
-config_files="`echo $ac_config_files`"
-config_headers="`echo $ac_config_headers`"
-config_commands="`echo $ac_config_commands`"
+config_files="$ac_config_files"
+config_headers="$ac_config_headers"
+config_commands="$ac_config_commands"
 
 _ACEOF
 
@@ -16322,6 +16393,7 @@ fi
 
 echo
 echo "Build AFPacket DAQ module.. : $enable_afpacket_module"
+echo "Build DPDK DAQ module...... : $enable_dpdk_module"
 echo "Build Dump DAQ module...... : $enable_dump_module"
 echo "Build IPFW DAQ module...... : $enable_ipfw_module"
 echo "Build IPQ DAQ module....... : $enable_ipq_module"

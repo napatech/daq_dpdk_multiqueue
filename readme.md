@@ -1,6 +1,6 @@
-# --- daq-2.2.1_dpdk16.07_mq.patch ---
+#DAQ 2.2.1 with dpdk16.07 multi-queue (RSS) support
 
-This is a patch for adding DPDK 16.07 multi-queue support for DAQ 2.2.1 to use
+In this work we have added DPDK 16.07 multi-queue support for DAQ 2.2.1 to use
 with Snort 3.0 with multi threading support.
 
 ## Why this module?
@@ -16,13 +16,9 @@ So here it is.
 
 1. Download DPDK 16.07 and build it
 
-2. Download DAQ 2.2.1 and modify and build it as follows:
+2. Download or clone this DAQ 2.2.1 modified version:
 ```bash
-# tar zxf daq-2.2.1.tar.gz
-# patch -t -p1 < daq-2.2.1_dpdk16.07_mq.patch
 # cd daq-2.2.1
-# autoconf
-# automake
 # ./ configure --with-dpdk-includes=<dpdk-16.07 dir>/x86_64-native-linuxapp-gcc/include \
 --with-dpdk-libraries=<dpdk-16.07 dir>/x86_64-native-linuxapp-gcc/lib
 # make install

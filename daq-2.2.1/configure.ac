@@ -111,6 +111,22 @@ if test "x$with_netmap_includes" != "xno"; then
     CPPFLAGS="${CPPFLAGS} -I${with_netmap_includes}"
 fi
 
+AC_ARG_WITH(dpdk_includes,
+            [  --with-dpdk-includes=DIR    dpdk include directory],
+            [with_dpdk_includes="$withval"], [with_dpdk_includes="no"])
+
+if test "x$with_dpdk_includes" != "xno"; then
+    CPPFLAGS="${CPPFLAGS} -I${with_dpdk_includes}"
+fi
+
+AC_ARG_WITH(dpdk_libraries,
+            [  --with-dpdk-libraries=DIR    dpdk library directory],
+            [with_dpdk_libraries="$withval"], [with_dpdk_libraries="no"])
+
+if test "x$with_dpdk_libraries" != "xno"; then
+    DPDK_LDFLAGS="-L${with_dpdk_libraries}"
+fi
+
 DEFAULT_ENABLE=yes
 
 # Modules configuration
@@ -136,6 +152,20 @@ if test "$enable_afpacket_module" = yes; then
     fi
 fi
 AM_CONDITIONAL([BUILD_AFPACKET_MODULE], [test "$enable_afpacket_module" = yes])
+
+# DPDK Module
+AC_ARG_ENABLE(dpdk-module,
+              AC_HELP_STRING([--disable-dpdk-module],[don't build the bundled dpdk module]),
+              [enable_dpdk_module="$enableval"], [enable_dpdk_module="$DEFAULT_ENABLE"])
+if test "$enable_dpdk_module" = yes; then
+    AC_CHECK_HEADER([rte_config.h], [], [enable_dpdk_module=no])
+    if test "$enable_dpdk_module" = yes; then
+        STATIC_LIBS="${STATIC_LIBS} -lsfbpf ${DPDK_LDFLAGS} -ldpdk -lpthread"
+        CFLAGS="${CFLAGS} -std=gnu99 -Wno-pedantic"
+    fi
+fi
+AM_CONDITIONAL([BUILD_DPDK_MODULE], [test "$enable_dpdk_module" = yes])
+
 
 # Dump Module
 AC_ARG_ENABLE(dump-module,
@@ -266,6 +296,7 @@ AC_SUBST(DNET_LDFLAGS)
 
 AM_CONDITIONAL([BUILD_MODULES], [test "$enable_afpacket_module" = yes -o \
                                       "$enable_dump_module" = yes -o \
+				      "$enable_dpdk_module" = yes -o \
                                       "$enable_ipfw_module" = yes -o \
                                       "$enable_ipq_module" = yes -o \
                                       "$enable_nfq_module" = yes -o \
@@ -315,6 +346,7 @@ AC_OUTPUT
 
 echo
 echo "Build AFPacket DAQ module.. : $enable_afpacket_module"
+echo "Build DPDK DAQ module...... : $enable_dpdk_module"
 echo "Build Dump DAQ module...... : $enable_dump_module"
 echo "Build IPFW DAQ module...... : $enable_ipfw_module"
 echo "Build IPQ DAQ module....... : $enable_ipq_module"

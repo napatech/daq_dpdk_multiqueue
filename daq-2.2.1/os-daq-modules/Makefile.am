@@ -38,6 +38,19 @@ endif
     libdaq_static_modules_la_CFLAGS += -DBUILD_PCAP_MODULE
 endif
 
+if BUILD_DPDK_MODULE
+if BUILD_SHARED_MODULES
+    pkglib_LTLIBRARIES += daq_dpdk.la
+    daq_dpdk_la_SOURCES = daq_dpdk.c
+    daq_dpdk_la_CFLAGS = -DBUILDING_SO -msse4
+    daq_dpdk_la_LDFLAGS = -module -export-dynamic -avoid-version -shared @XCCFLAGS@
+    daq_dpdk_la_LIBADD = $(top_builddir)/sfbpf/libsfbpf.la
+endif
+    libdaq_static_modules_la_SOURCES += daq_dpdk.c
+    libdaq_static_modules_la_CFLAGS += -DBUILD_DPDK_MODULE -msse4
+endif
+
+
 if BUILD_DUMP_MODULE
 if BUILD_SHARED_MODULES
     pkglib_LTLIBRARIES += daq_dump.la

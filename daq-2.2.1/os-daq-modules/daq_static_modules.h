@@ -24,6 +24,9 @@
 #ifdef BUILD_AFPACKET_MODULE
 extern const DAQ_Module_t afpacket_daq_module_data;
 #endif
+#ifdef BUILD_DPDK_MODULE
+extern const DAQ_Module_t dpdk_daq_module_data;
+#endif
 #ifdef BUILD_DUMP_MODULE
 extern const DAQ_Module_t dump_daq_module_data;
 #endif

@@ -95,21 +95,24 @@ host_triplet = @host@
 @BUILD_PCAP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am__append_4 = daq_pcap.la
 @BUILD_PCAP_MODULE_TRUE@am__append_5 = daq_pcap.c
 @BUILD_PCAP_MODULE_TRUE@am__append_6 = -DBUILD_PCAP_MODULE
-@BUILD_DUMP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am__append_7 = daq_dump.la
-@BUILD_DUMP_MODULE_TRUE@am__append_8 = daq_dump.c
-@BUILD_DUMP_MODULE_TRUE@am__append_9 = -DBUILD_DUMP_MODULE
-@BUILD_IPFW_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am__append_10 = daq_ipfw.la
-@BUILD_IPFW_MODULE_TRUE@am__append_11 = daq_ipfw.c
-@BUILD_IPFW_MODULE_TRUE@am__append_12 = -DBUILD_IPFW_MODULE
-@BUILD_IPQ_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am__append_13 = daq_ipq.la
-@BUILD_IPQ_MODULE_TRUE@am__append_14 = daq_ipq.c
-@BUILD_IPQ_MODULE_TRUE@am__append_15 = -DBUILD_IPQ_MODULE
-@BUILD_NFQ_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am__append_16 = daq_nfq.la
-@BUILD_NFQ_MODULE_TRUE@am__append_17 = daq_nfq.c
-@BUILD_NFQ_MODULE_TRUE@am__append_18 = -DBUILD_NFQ_MODULE
-@BUILD_NETMAP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am__append_19 = daq_netmap.la
-@BUILD_NETMAP_MODULE_TRUE@am__append_20 = daq_netmap.c
-@BUILD_NETMAP_MODULE_TRUE@am__append_21 = -DBUILD_NETMAP_MODULE
+@BUILD_DPDK_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am__append_7 = daq_dpdk.la
+@BUILD_DPDK_MODULE_TRUE@am__append_8 = daq_dpdk.c
+@BUILD_DPDK_MODULE_TRUE@am__append_9 = -DBUILD_DPDK_MODULE -msse4
+@BUILD_DUMP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am__append_10 = daq_dump.la
+@BUILD_DUMP_MODULE_TRUE@am__append_11 = daq_dump.c
+@BUILD_DUMP_MODULE_TRUE@am__append_12 = -DBUILD_DUMP_MODULE
+@BUILD_IPFW_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am__append_13 = daq_ipfw.la
+@BUILD_IPFW_MODULE_TRUE@am__append_14 = daq_ipfw.c
+@BUILD_IPFW_MODULE_TRUE@am__append_15 = -DBUILD_IPFW_MODULE
+@BUILD_IPQ_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am__append_16 = daq_ipq.la
+@BUILD_IPQ_MODULE_TRUE@am__append_17 = daq_ipq.c
+@BUILD_IPQ_MODULE_TRUE@am__append_18 = -DBUILD_IPQ_MODULE
+@BUILD_NFQ_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am__append_19 = daq_nfq.la
+@BUILD_NFQ_MODULE_TRUE@am__append_20 = daq_nfq.c
+@BUILD_NFQ_MODULE_TRUE@am__append_21 = -DBUILD_NFQ_MODULE
+@BUILD_NETMAP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am__append_22 = daq_netmap.la
+@BUILD_NETMAP_MODULE_TRUE@am__append_23 = daq_netmap.c
+@BUILD_NETMAP_MODULE_TRUE@am__append_24 = -DBUILD_NETMAP_MODULE
 subdir = os-daq-modules
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_check_compile_flag.m4 \
@@ -169,6 +172,16 @@ daq_afpacket_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 @BUILD_AFPACKET_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am_daq_afpacket_la_rpath =  \
 @BUILD_AFPACKET_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@	-rpath \
 @BUILD_AFPACKET_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@	$(pkglibdir)
+@BUILD_DPDK_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@daq_dpdk_la_DEPENDENCIES = $(top_builddir)/sfbpf/libsfbpf.la
+am__daq_dpdk_la_SOURCES_DIST = daq_dpdk.c
+@BUILD_DPDK_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am_daq_dpdk_la_OBJECTS = daq_dpdk_la-daq_dpdk.lo
+daq_dpdk_la_OBJECTS = $(am_daq_dpdk_la_OBJECTS)
+daq_dpdk_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(daq_dpdk_la_CFLAGS) \
+	$(CFLAGS) $(daq_dpdk_la_LDFLAGS) $(LDFLAGS) -o $@
+@BUILD_DPDK_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am_daq_dpdk_la_rpath =  \
+@BUILD_DPDK_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@	-rpath \
+@BUILD_DPDK_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@	$(pkglibdir)
 daq_dump_la_DEPENDENCIES =
 am__daq_dump_la_SOURCES_DIST = daq_dump.c
 @BUILD_DUMP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@am_daq_dump_la_OBJECTS = daq_dump_la-daq_dump.lo
@@ -231,25 +244,27 @@ daq_pcap_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 @BUILD_PCAP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@	$(pkglibdir)
 libdaq_static_modules_la_DEPENDENCIES =
 am__libdaq_static_modules_la_SOURCES_DIST = daq_static_modules.c \
-	daq_static_modules.h daq_afpacket.c daq_pcap.c daq_dump.c \
-	daq_ipfw.c daq_ipq.c daq_nfq.c daq_netmap.c
+	daq_static_modules.h daq_afpacket.c daq_pcap.c daq_dpdk.c \
+	daq_dump.c daq_ipfw.c daq_ipq.c daq_nfq.c daq_netmap.c
 @BUILD_AFPACKET_MODULE_TRUE@am__objects_1 = libdaq_static_modules_la-daq_afpacket.lo
 @BUILD_PCAP_MODULE_TRUE@am__objects_2 =  \
 @BUILD_PCAP_MODULE_TRUE@	libdaq_static_modules_la-daq_pcap.lo
-@BUILD_DUMP_MODULE_TRUE@am__objects_3 =  \
+@BUILD_DPDK_MODULE_TRUE@am__objects_3 =  \
+@BUILD_DPDK_MODULE_TRUE@	libdaq_static_modules_la-daq_dpdk.lo
+@BUILD_DUMP_MODULE_TRUE@am__objects_4 =  \
 @BUILD_DUMP_MODULE_TRUE@	libdaq_static_modules_la-daq_dump.lo
-@BUILD_IPFW_MODULE_TRUE@am__objects_4 =  \
+@BUILD_IPFW_MODULE_TRUE@am__objects_5 =  \
 @BUILD_IPFW_MODULE_TRUE@	libdaq_static_modules_la-daq_ipfw.lo
-@BUILD_IPQ_MODULE_TRUE@am__objects_5 =  \
+@BUILD_IPQ_MODULE_TRUE@am__objects_6 =  \
 @BUILD_IPQ_MODULE_TRUE@	libdaq_static_modules_la-daq_ipq.lo
-@BUILD_NFQ_MODULE_TRUE@am__objects_6 =  \
+@BUILD_NFQ_MODULE_TRUE@am__objects_7 =  \
 @BUILD_NFQ_MODULE_TRUE@	libdaq_static_modules_la-daq_nfq.lo
-@BUILD_NETMAP_MODULE_TRUE@am__objects_7 = libdaq_static_modules_la-daq_netmap.lo
+@BUILD_NETMAP_MODULE_TRUE@am__objects_8 = libdaq_static_modules_la-daq_netmap.lo
 am_libdaq_static_modules_la_OBJECTS =  \
 	libdaq_static_modules_la-daq_static_modules.lo \
 	$(am__objects_1) $(am__objects_2) $(am__objects_3) \
 	$(am__objects_4) $(am__objects_5) $(am__objects_6) \
-	$(am__objects_7)
+	$(am__objects_7) $(am__objects_8)
 libdaq_static_modules_la_OBJECTS =  \
 	$(am_libdaq_static_modules_la_OBJECTS)
 libdaq_static_modules_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
@@ -291,11 +306,13 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(daq_afpacket_la_SOURCES) $(daq_dump_la_SOURCES) \
-	$(daq_ipfw_la_SOURCES) $(daq_ipq_la_SOURCES) \
-	$(daq_netmap_la_SOURCES) $(daq_nfq_la_SOURCES) \
-	$(daq_pcap_la_SOURCES) $(libdaq_static_modules_la_SOURCES)
+SOURCES = $(daq_afpacket_la_SOURCES) $(daq_dpdk_la_SOURCES) \
+	$(daq_dump_la_SOURCES) $(daq_ipfw_la_SOURCES) \
+	$(daq_ipq_la_SOURCES) $(daq_netmap_la_SOURCES) \
+	$(daq_nfq_la_SOURCES) $(daq_pcap_la_SOURCES) \
+	$(libdaq_static_modules_la_SOURCES)
 DIST_SOURCES = $(am__daq_afpacket_la_SOURCES_DIST) \
+	$(am__daq_dpdk_la_SOURCES_DIST) \
 	$(am__daq_dump_la_SOURCES_DIST) \
 	$(am__daq_ipfw_la_SOURCES_DIST) $(am__daq_ipq_la_SOURCES_DIST) \
 	$(am__daq_netmap_la_SOURCES_DIST) \
@@ -458,15 +475,16 @@ ACLOCAL_AMFLAGS = -I m4
 bin_SCRIPTS = daq-modules-config
 pkglib_LTLIBRARIES = $(am__append_1) $(am__append_4) $(am__append_7) \
 	$(am__append_10) $(am__append_13) $(am__append_16) \
-	$(am__append_19)
+	$(am__append_19) $(am__append_22)
 lib_LTLIBRARIES = libdaq_static_modules.la
 libdaq_static_modules_la_SOURCES = daq_static_modules.c \
 	daq_static_modules.h $(am__append_2) $(am__append_5) \
 	$(am__append_8) $(am__append_11) $(am__append_14) \
-	$(am__append_17) $(am__append_20)
+	$(am__append_17) $(am__append_20) $(am__append_23)
 libdaq_static_modules_la_CFLAGS = $(AM_CFLAGS) $(am__append_3) \
 	$(am__append_6) $(am__append_9) $(am__append_12) \
-	$(am__append_15) $(am__append_18) $(am__append_21)
+	$(am__append_15) $(am__append_18) $(am__append_21) \
+	$(am__append_24)
 libdaq_static_modules_la_LDFLAGS = -static -avoid-version
 libdaq_static_modules_la_LIBADD = 
 @BUILD_AFPACKET_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@daq_afpacket_la_SOURCES = daq_afpacket.c
@@ -477,6 +495,10 @@ libdaq_static_modules_la_LIBADD =
 @BUILD_PCAP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@daq_pcap_la_CFLAGS = $(AM_CFLAGS) -DBUILDING_SO
 @BUILD_PCAP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@daq_pcap_la_LDFLAGS = -module -export-dynamic -avoid-version -shared @XCCFLAGS@
 @BUILD_PCAP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@daq_pcap_la_LIBADD = -lpcap
+@BUILD_DPDK_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@daq_dpdk_la_SOURCES = daq_dpdk.c
+@BUILD_DPDK_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@daq_dpdk_la_CFLAGS = -DBUILDING_SO -msse4
+@BUILD_DPDK_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@daq_dpdk_la_LDFLAGS = -module -export-dynamic -avoid-version -shared @XCCFLAGS@
+@BUILD_DPDK_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@daq_dpdk_la_LIBADD = $(top_builddir)/sfbpf/libsfbpf.la
 @BUILD_DUMP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@daq_dump_la_SOURCES = daq_dump.c
 @BUILD_DUMP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@daq_dump_la_CFLAGS = $(AM_CFLAGS) -DBUILDING_SO
 @BUILD_DUMP_MODULE_TRUE@@BUILD_SHARED_MODULES_TRUE@daq_dump_la_LDFLAGS = -module -export-dynamic -avoid-version -shared @XCCFLAGS@
@@ -608,6 +630,9 @@ clean-pkglibLTLIBRARIES:
 daq_afpacket.la: $(daq_afpacket_la_OBJECTS) $(daq_afpacket_la_DEPENDENCIES) $(EXTRA_daq_afpacket_la_DEPENDENCIES) 
 	$(AM_V_CCLD)$(daq_afpacket_la_LINK) $(am_daq_afpacket_la_rpath) $(daq_afpacket_la_OBJECTS) $(daq_afpacket_la_LIBADD) $(LIBS)
 
+daq_dpdk.la: $(daq_dpdk_la_OBJECTS) $(daq_dpdk_la_DEPENDENCIES) $(EXTRA_daq_dpdk_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(daq_dpdk_la_LINK) $(am_daq_dpdk_la_rpath) $(daq_dpdk_la_OBJECTS) $(daq_dpdk_la_LIBADD) $(LIBS)
+
 daq_dump.la: $(daq_dump_la_OBJECTS) $(daq_dump_la_DEPENDENCIES) $(EXTRA_daq_dump_la_DEPENDENCIES) 
 	$(AM_V_CCLD)$(daq_dump_la_LINK) $(am_daq_dump_la_rpath) $(daq_dump_la_OBJECTS) $(daq_dump_la_LIBADD) $(LIBS)
 
@@ -671,6 +696,7 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/daq_afpacket_la-daq_afpacket.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/daq_dpdk_la-daq_dpdk.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/daq_dump_la-daq_dump.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/daq_ipfw_la-daq_ipfw.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/daq_ipq_la-daq_ipq.Plo@am__quote@
@@ -678,6 +704,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/daq_nfq_la-daq_nfq.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/daq_pcap_la-daq_pcap.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libdaq_static_modules_la-daq_afpacket.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libdaq_static_modules_la-daq_dpdk.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libdaq_static_modules_la-daq_dump.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libdaq_static_modules_la-daq_ipfw.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libdaq_static_modules_la-daq_ipq.Plo@am__quote@
@@ -713,6 +740,13 @@ daq_afpacket_la-daq_afpacket.lo: daq_afpacket.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='daq_afpacket.c' object='daq_afpacket_la-daq_afpacket.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(daq_afpacket_la_CFLAGS) $(CFLAGS) -c -o daq_afpacket_la-daq_afpacket.lo `test -f 'daq_afpacket.c' || echo '$(srcdir)/'`daq_afpacket.c
+
+daq_dpdk_la-daq_dpdk.lo: daq_dpdk.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(daq_dpdk_la_CFLAGS) $(CFLAGS) -MT daq_dpdk_la-daq_dpdk.lo -MD -MP -MF $(DEPDIR)/daq_dpdk_la-daq_dpdk.Tpo -c -o daq_dpdk_la-daq_dpdk.lo `test -f 'daq_dpdk.c' || echo '$(srcdir)/'`daq_dpdk.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/daq_dpdk_la-daq_dpdk.Tpo $(DEPDIR)/daq_dpdk_la-daq_dpdk.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='daq_dpdk.c' object='daq_dpdk_la-daq_dpdk.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(daq_dpdk_la_CFLAGS) $(CFLAGS) -c -o daq_dpdk_la-daq_dpdk.lo `test -f 'daq_dpdk.c' || echo '$(srcdir)/'`daq_dpdk.c
 
 daq_dump_la-daq_dump.lo: daq_dump.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(daq_dump_la_CFLAGS) $(CFLAGS) -MT daq_dump_la-daq_dump.lo -MD -MP -MF $(DEPDIR)/daq_dump_la-daq_dump.Tpo -c -o daq_dump_la-daq_dump.lo `test -f 'daq_dump.c' || echo '$(srcdir)/'`daq_dump.c
@@ -776,6 +810,13 @@ libdaq_static_modules_la-daq_pcap.lo: daq_pcap.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='daq_pcap.c' object='libdaq_static_modules_la-daq_pcap.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libdaq_static_modules_la_CFLAGS) $(CFLAGS) -c -o libdaq_static_modules_la-daq_pcap.lo `test -f 'daq_pcap.c' || echo '$(srcdir)/'`daq_pcap.c
+
+libdaq_static_modules_la-daq_dpdk.lo: daq_dpdk.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libdaq_static_modules_la_CFLAGS) $(CFLAGS) -MT libdaq_static_modules_la-daq_dpdk.lo -MD -MP -MF $(DEPDIR)/libdaq_static_modules_la-daq_dpdk.Tpo -c -o libdaq_static_modules_la-daq_dpdk.lo `test -f 'daq_dpdk.c' || echo '$(srcdir)/'`daq_dpdk.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libdaq_static_modules_la-daq_dpdk.Tpo $(DEPDIR)/libdaq_static_modules_la-daq_dpdk.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='daq_dpdk.c' object='libdaq_static_modules_la-daq_dpdk.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libdaq_static_modules_la_CFLAGS) $(CFLAGS) -c -o libdaq_static_modules_la-daq_dpdk.lo `test -f 'daq_dpdk.c' || echo '$(srcdir)/'`daq_dpdk.c
 
 libdaq_static_modules_la-daq_dump.lo: daq_dump.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libdaq_static_modules_la_CFLAGS) $(CFLAGS) -MT libdaq_static_modules_la-daq_dump.lo -MD -MP -MF $(DEPDIR)/libdaq_static_modules_la-daq_dump.Tpo -c -o libdaq_static_modules_la-daq_dump.lo `test -f 'daq_dump.c' || echo '$(srcdir)/'`daq_dump.c
