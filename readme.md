@@ -1,4 +1,4 @@
-#DAQ 2.2.1 with dpdk16.07 multi-queue (RSS) support
+# DAQ 2.2.1 with dpdk16.07 multi-queue (RSS) support
 
 In this work we have added DPDK 16.07 multi-queue support for DAQ 2.2.1 to use
 with Snort 3.0 with multi threading support.
@@ -19,8 +19,7 @@ So here it is.
 2. Download or clone this DAQ 2.2.1 modified version:
 ```bash
 # cd daq-2.2.1
-# ./ configure --with-dpdk-includes=<dpdk-16.07 dir>/x86_64-native-linuxapp-gcc/include \
---with-dpdk-libraries=<dpdk-16.07 dir>/x86_64-native-linuxapp-gcc/lib
+# ./ configure --with-dpdk-includes=<dpdk-16.07 dir>/x86_64-native-linuxapp-gcc/include --with-dpdk-libraries=<dpdk-16.07 dir>/x86_64-native-linuxapp-gcc/lib
 # make install
 ```
 3. Download Snort 3.0 and build/install it. - currently, only alpha 4 is available.
@@ -48,7 +47,7 @@ Snort in passive mode (IDS) using 2 RSS queues and 4 cores on 1 interfaces:
 # taskset -c 0-13 snort --daq dpdk --daq-var dpdk_argc="-n4" -i "dpdk0" -z 4 --daq-var dpdk_queues=2
 ```
 
-Note: taskset is used here to pinn the cores used by Snort to run only on NUMA 0. This is done do avoid QPI 
+Note: taskset is used here to pin the cores used by Snort to run only on NUMA 0. This is done do avoid QPI 
 utilization. Run the cores on the same NUMA node as the NIC is sitting on.
 
 a. Only one interface specifier is supported, but that may contain multiple interfaces and/or interface pairs.
@@ -60,7 +59,7 @@ c. Each pair in inline mode is bidirectional, thus both directions are handled b
    keeps track of bi-directional protocols.
    
 d. If more threads than interfaces/pairs is specified, then the number of threads are equally distributes over 
-   the interfaces specified. If 1 queues is specified, then each queue will get multiple threads that 
+   the interfaces specified. If only 1 queue is specified, then each queue will get multiple threads that 
    reads/transmits from/to it. In this case, locking contension must be expected to a certain degree.
    
 e: To avoid locking contention, you can make use of the multi-queue (RSS) feature on the HW. This is done with 
@@ -84,6 +83,7 @@ h. Additionally an option "--daq-var debug" may be specified. This will print ou
 Xeon 2697 v3 - 14 core - Intel XL710 2 x 40G - bare metal testruns:
 Xena transmitter 68 byte packets Eth+IP+UDP with incrementing IP addresses.
 Packets decoded by Snort and passed. No explicit rules applied.
+Running Snort in inline mode.
 
 16 Gbps thoroughput (20.8 Gbps wire speed) 29.5 Mpps - using 14 cores for Snort and 14 queues in a RSS setup.
 
