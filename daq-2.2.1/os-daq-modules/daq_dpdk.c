@@ -272,6 +272,23 @@ static int start_device(Dpdk_Interface_t *dpdk_intf, DpdkDevice *device)
     if (dpdk_intf->promisc_flag)
         rte_eth_promiscuous_enable(port);
 
+    {
+    	struct rte_eth_hash_filter_info info;
+    	int ret;
+    	if (rte_eth_dev_filter_supported(port, RTE_ETH_FILTER_HASH) == 0) {
+
+			memset(&info, 0, sizeof(info));
+			info.info_type = RTE_ETH_HASH_FILTER_SYM_HASH_ENA_PER_PORT;
+			info.info.enable = 1;
+			printf("Set syn hash filter on port %i\n", port);
+			ret = rte_eth_dev_filter_ctrl(port, RTE_ETH_FILTER_HASH, RTE_ETH_FILTER_SET, &info);
+			if (ret < 0) {
+				printf("Cannot set symmetric hash enable per port on "
+							"port %u\n", port);
+			}
+    	}
+    }
+
     device->flags |= DPDKINST_STARTED;
     RELEASE_LOCK(&port_lock[port]);
     return DAQ_SUCCESS;
