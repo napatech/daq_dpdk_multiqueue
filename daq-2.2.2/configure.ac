@@ -3,7 +3,7 @@
 
 m4_define([daq_major_version], [2])
 m4_define([daq_minor_version], [2])
-m4_define([daq_patch_version], [1])
+m4_define([daq_patch_version], [2])
 m4_define([daq_version], [daq_major_version.daq_minor_version.daq_patch_version])
 
 AC_PREREQ([2.69])
@@ -160,7 +160,7 @@ AC_ARG_ENABLE(dpdk-module,
 if test "$enable_dpdk_module" = yes; then
     AC_CHECK_HEADER([rte_config.h], [], [enable_dpdk_module=no])
     if test "$enable_dpdk_module" = yes; then
-        STATIC_LIBS="${STATIC_LIBS} -lsfbpf ${DPDK_LDFLAGS} -ldpdk -lpthread"
+	STATIC_LIBS="${STATIC_LIBS} -lsfbpf ${DPDK_LDFLAGS} -Wl,--as-needed,--whole-archive,${with_dpdk_libraries}/libdpdk.a,--no-whole-archive -L/opt/napatech3/lib -lntapi -lntos -lpthread -lrt -lnuma -lm"
         CFLAGS="${CFLAGS} -std=gnu99 -Wno-pedantic"
     fi
 fi
