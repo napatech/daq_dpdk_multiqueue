@@ -200,7 +200,7 @@ static int SetupFilter(uint8_t port, uint8_t numQueues, struct rte_flow_error *e
 
   rssQueue.rss_conf.rss_key = NULL;
   rssQueue.rss_conf.rss_key_len = 0;
-  rssQueue.rss_conf.rss_hf = ETH_RSS_NONFRAG_IPV4_TCP;
+  rssQueue.rss_conf.rss_hf = ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP;
   rssQueue.rss.num = numQueues;
   for (i = 0; i < numQueues; i++) {
     rssQueue.rss.queue[i] = i;
