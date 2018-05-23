@@ -801,8 +801,6 @@ with_libpcap_libraries
 with_dnet_includes
 with_dnet_libraries
 with_netmap_includes
-with_dpdk_includes
-with_dpdk_libraries
 enable_bundled_modules
 enable_afpacket_module
 enable_dpdk_module
@@ -1485,8 +1483,6 @@ Optional Packages:
   --with-dnet-includes=DIR    dnet include directory
   --with-dnet-libraries=DIR   dnet library directory
   --with-netmap-includes=DIR    netmap include directory
-  --with-dpdk-includes=DIR    dpdk include directory
-  --with-dpdk-libraries=DIR    dpdk library directory
 
 Some influential environment variables:
   CC          C compiler command
@@ -12895,32 +12891,6 @@ if test "x$with_netmap_includes" != "xno"; then
     CPPFLAGS="${CPPFLAGS} -I${with_netmap_includes}"
 fi
 
-
-# Check whether --with-dpdk_includes was given.
-if test "${with_dpdk_includes+set}" = set; then :
-  withval=$with_dpdk_includes; with_dpdk_includes="$withval"
-else
-  with_dpdk_includes="no"
-fi
-
-
-if test "x$with_dpdk_includes" != "xno"; then
-    CPPFLAGS="${CPPFLAGS} -I${with_dpdk_includes}"
-fi
-
-
-# Check whether --with-dpdk_libraries was given.
-if test "${with_dpdk_libraries+set}" = set; then :
-  withval=$with_dpdk_libraries; with_dpdk_libraries="$withval"
-else
-  with_dpdk_libraries="no"
-fi
-
-
-if test "x$with_dpdk_libraries" != "xno"; then
-    DPDK_LDFLAGS="-L${with_dpdk_libraries}"
-fi
-
 DEFAULT_ENABLE=yes
 
 # Modules configuration
@@ -13017,16 +12987,31 @@ else
 fi
 
 if test "$enable_dpdk_module" = yes; then
-    ac_fn_c_check_header_mongrel "$LINENO" "rte_config.h" "ac_cv_header_rte_config_h" "$ac_includes_default"
-if test "x$ac_cv_header_rte_config_h" = xyes; then :
-
+    if test "x$RTE_SDK" == "x"; then
+        echo
+        echo "   ERROR!  RTE_SDK environment variable must be set to the DPDK root directory."
+        echo
+        exit
+    fi
+    as_ac_Header=`$as_echo "ac_cv_header_${RTE_SDK}/x86_64-native-linuxapp-gcc/include/rte_config.h" | $as_tr_sh`
+ac_fn_c_check_header_mongrel "$LINENO" "${RTE_SDK}/x86_64-native-linuxapp-gcc/include/rte_config.h" "$as_ac_Header" "$ac_includes_default"
+if eval test \"x\$"$as_ac_Header"\" = x"yes"; then :
+  valid_dpdk_module=yes
 else
-  enable_dpdk_module=no
+  valid_dpdk_module=no
 fi
 
 
+    if test "$valid_dpdk_module" = no; then
+        echo
+        echo "   ERROR! Missing rte_config.h in ${RTE_SDK}/x86_64-native-linuxapp-gcc/include"
+        echo
+        exit
+    fi
     if test "$enable_dpdk_module" = yes; then
-	STATIC_LIBS="${STATIC_LIBS} -lsfbpf ${DPDK_LDFLAGS} -Wl,--as-needed,--whole-archive,${with_dpdk_libraries}/libdpdk.a,--no-whole-archive -L/opt/napatech3/lib -lntapi -lntos -lpthread -lrt -lnuma -lm"
+	CPPFLAGS="${CPPFLAGS} -I${RTE_SDK}/x86_64-native-linuxapp-gcc/include"
+	DPDK_LDFLAGS="-L${RTE_SDK}/x86_64-native-linuxapp-gcc/lib"
+	STATIC_LIBS="${STATIC_LIBS} -lsfbpf ${DPDK_LDFLAGS} -Wl,--as-needed,--whole-archive,${RTE_SDK}/x86_64-native-linuxapp-gcc/lib/libdpdk.a,--no-whole-archive -L/opt/napatech3/lib -lntapi -lntos -lpthread -lrt -lnuma -lm"
         CFLAGS="${CFLAGS} -std=gnu99 -Wno-pedantic"
     fi
 fi
@@ -13037,7 +13022,6 @@ else
   BUILD_DPDK_MODULE_TRUE='#'
   BUILD_DPDK_MODULE_FALSE=
 fi
-
 
 
 # Dump Module

@@ -27,7 +27,7 @@ AC_ENABLE_VISIBILITY()
 AC_SF_COMPILER_SETUP()
 
 # IPv6 configuration
-AC_ARG_ENABLE(ipv6, 
+AC_ARG_ENABLE(ipv6,
 AS_HELP_STRING([--enable-ipv6],[build IPv6-capable version @<:@default=yes, if getaddrinfo available@:>@]),
     [],
     [enable_ipv6=ifavailable])
@@ -111,22 +111,6 @@ if test "x$with_netmap_includes" != "xno"; then
     CPPFLAGS="${CPPFLAGS} -I${with_netmap_includes}"
 fi
 
-AC_ARG_WITH(dpdk_includes,
-            [  --with-dpdk-includes=DIR    dpdk include directory],
-            [with_dpdk_includes="$withval"], [with_dpdk_includes="no"])
-
-if test "x$with_dpdk_includes" != "xno"; then
-    CPPFLAGS="${CPPFLAGS} -I${with_dpdk_includes}"
-fi
-
-AC_ARG_WITH(dpdk_libraries,
-            [  --with-dpdk-libraries=DIR    dpdk library directory],
-            [with_dpdk_libraries="$withval"], [with_dpdk_libraries="no"])
-
-if test "x$with_dpdk_libraries" != "xno"; then
-    DPDK_LDFLAGS="-L${with_dpdk_libraries}"
-fi
-
 DEFAULT_ENABLE=yes
 
 # Modules configuration
@@ -158,14 +142,27 @@ AC_ARG_ENABLE(dpdk-module,
               AC_HELP_STRING([--disable-dpdk-module],[don't build the bundled dpdk module]),
               [enable_dpdk_module="$enableval"], [enable_dpdk_module="$DEFAULT_ENABLE"])
 if test "$enable_dpdk_module" = yes; then
-    AC_CHECK_HEADER([rte_config.h], [], [enable_dpdk_module=no])
+    if test "x$RTE_SDK" == "x"; then
+        echo
+        echo "   ERROR!  RTE_SDK environment variable must be set to the DPDK root directory."
+        echo
+        exit
+    fi
+    AC_CHECK_HEADER([${RTE_SDK}/x86_64-native-linuxapp-gcc/include/rte_config.h], [valid_dpdk_module=yes], [valid_dpdk_module=no])
+    if test "$valid_dpdk_module" = no; then
+        echo
+        echo "   ERROR! Missing rte_config.h in ${RTE_SDK}/x86_64-native-linuxapp-gcc/include"
+        echo
+        exit
+    fi
     if test "$enable_dpdk_module" = yes; then
-	STATIC_LIBS="${STATIC_LIBS} -lsfbpf ${DPDK_LDFLAGS} -Wl,--as-needed,--whole-archive,${with_dpdk_libraries}/libdpdk.a,--no-whole-archive -L/opt/napatech3/lib -lntapi -lntos -lpthread -lrt -lnuma -lm"
+	CPPFLAGS="${CPPFLAGS} -I${RTE_SDK}/x86_64-native-linuxapp-gcc/include"
+	DPDK_LDFLAGS="-L${RTE_SDK}/x86_64-native-linuxapp-gcc/lib"
+	STATIC_LIBS="${STATIC_LIBS} -lsfbpf ${DPDK_LDFLAGS} -Wl,--as-needed,--whole-archive,${RTE_SDK}/x86_64-native-linuxapp-gcc/lib/libdpdk.a,--no-whole-archive -L/opt/napatech3/lib -lntapi -lntos -lpthread -lrt -lnuma -lm"
         CFLAGS="${CFLAGS} -std=gnu99 -Wno-pedantic"
     fi
 fi
 AM_CONDITIONAL([BUILD_DPDK_MODULE], [test "$enable_dpdk_module" = yes])
-
 
 # Dump Module
 AC_ARG_ENABLE(dump-module,

@@ -226,9 +226,9 @@ AUTOMAKE = ${SHELL} /project/snort/daq_dpdk_multiqueue/daq-2.2.2/missing automak
 AWK = gawk
 CC = gcc
 CCDEPMODE = depmode=gcc3
-CFLAGS = -g -O2 -fvisibility=hidden -std=gnu99 -Wno-pedantic
+CFLAGS = -g -O2 -fvisibility=hidden
 CPP = gcc -E
-CPPFLAGS =   -I/project/dpdk_napatech/x86_64-native-linuxapp-gcc/include
+CPPFLAGS =  
 CYGPATH_W = echo
 DAQ_MAJOR_VERSION = 2
 DAQ_MINOR_VERSION = 2
@@ -282,7 +282,7 @@ RANLIB = ranlib
 SED = /usr/bin/sed
 SET_MAKE = 
 SHELL = /bin/sh
-STATIC_LIBS =  -lsfbpf -lsfbpf -L/project/dpdk_napatech/x86_64-native-linuxapp-gcc/lib -Wl,--as-needed,--whole-archive,/project/dpdk_napatech/x86_64-native-linuxapp-gcc/lib/libdpdk.a,--no-whole-archive -L/opt/napatech3/lib -lntapi -lntos -lpthread -lrt -lnuma -lm -lpcap -lsfbpf -lnfnetlink -lnetfilter_queue -lsfbpf -lpcap -ldnet
+STATIC_LIBS =  -lsfbpf -lpcap -lsfbpf -lnfnetlink -lnetfilter_queue -lsfbpf -lpcap -ldnet
 STRIP = strip
 VERSION = 2.2.2
 V_LEX = flex -Psfbpf_

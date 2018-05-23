@@ -8,10 +8,16 @@ The DPDK DAQ has been updated to version 2.2.2 with support for DPDK 18.05.
 It can be downloaded here: https://github.com/napatech/dpdk/releases
 A desription on how to buld and setup DPDK can be found here: http://dpdk.org/doc/quick-start and here http://dpdk.org/doc/guides/linux_gsg/index.html
 
+	The environment variable RTE_SDK must be set to the DPDK root before building the DAQ module and Snort.
+
+	```bash
+	export RTE_SDK=<DPDK root directory>
+	```
+
 2. Download or clone this DAQ 2.2.2 modified version:
 ```bash
 # cd daq-2.2.2
-# ./configure --prefix=/opt/snort --with-dpdk-includes=<dpdk-16.07 dir>/x86_64-native-linuxapp-gcc/include --with-dpdk-libraries=<dpdk-16.07 dir>/x86_64-native-linuxapp-gcc/lib
+# ./configure --prefix=/opt/snort 
 # make
 # make install
 ```
