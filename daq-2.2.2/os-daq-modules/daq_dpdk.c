@@ -168,15 +168,11 @@ static int SetupFilter(uint8_t port, uint8_t numQueues, struct rte_flow_error *e
   struct rte_flow_attr attr;
   struct rte_flow_item pattern[1];
   struct rte_flow_action actions[2];
-  struct rte_eth_hash_filter_info info;
   int i;
 
   // Action struct
-  struct {
-    struct rte_flow_action_rss rss;
-    uint16_t queue[RTE_ETHDEV_QUEUE_STAT_CNTRS];
-    struct rte_eth_rss_conf rss_conf;
-  } rssQueue;
+  struct rte_flow_action_rss rss;
+  uint16_t queues[RTE_ETHDEV_QUEUE_STAT_CNTRS];
 
   if (numQueues > RTE_ETHDEV_QUEUE_STAT_CNTRS) {
     error->type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
@@ -198,29 +194,20 @@ static int SetupFilter(uint8_t port, uint8_t numQueues, struct rte_flow_error *e
 
   pattern[0].type = RTE_FLOW_ITEM_TYPE_END;
 
-  rssQueue.rss_conf.rss_key = NULL;
-  rssQueue.rss_conf.rss_key_len = 0;
-  rssQueue.rss_conf.rss_hf = ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP;
-  rssQueue.rss.num = numQueues;
+  rss.func = RTE_ETH_HASH_FUNCTION_SIMPLE_XOR;
+  rss.level = 0;
+  rss.types  = ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP;
+  rss.queue_num = numQueues;
   for (i = 0; i < numQueues; i++) {
-    rssQueue.rss.queue[i] = i;
+    queues[i] = i;
   }
-  rssQueue.rss.rss_conf = &rssQueue.rss_conf;
+  rss.queue = queues;
   actions[actionCount].type = RTE_FLOW_ACTION_TYPE_RSS;
-  actions[actionCount].conf = &rssQueue.rss;
+  actions[actionCount].conf = &rss;
   actionCount++;
 
   actions[actionCount].type = RTE_FLOW_ACTION_TYPE_END;
   actionCount++;
-
-  memset(&info, 0, sizeof(info));
-  info.info_type = RTE_ETH_HASH_FILTER_SYM_HASH_ENA_PER_PORT;
-  info.info.enable = 1;
-  if (rte_eth_dev_filter_ctrl(port, RTE_ETH_FILTER_HASH, RTE_ETH_FILTER_SET, &info) < 0) {
-    error->type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
-    error->message = "Cannot set symmetric hash enable per port\n";
-    return -1;
-  }
 
   if (rte_flow_isolate(port, 1, error) < 0) {
     error->type = RTE_FLOW_ERROR_TYPE_UNSPECIFIED;
@@ -590,7 +577,7 @@ static int dpdk_daq_initialize(const DAQ_Config_t *config, void **ctxt_ptr, char
   while (dev[dev_idx] != '\0') {
     len = strcspn(&dev[dev_idx], ": ");
     if (len >= sizeof(dpdk_port)) {
-      snprintf(errbuf, errlen, "%s: Interface name too long! (%zu)", __FUNCTION__, len);
+      snprintf(errbuf, errlen, "%s: Interface name %s too long! (%zu)", __FUNCTION__, dev, len);
       goto err;
     }
     if (len != 0) {
@@ -873,6 +860,11 @@ static int dpdk_daq_acquire(void *handle, int cnt, DAQ_Analysis_Func_t callback,
 
         if (callback) {
           verdict = callback(user, &daqhdr, data);
+
+
+          if (verdict != DAQ_VERDICT_PASS) {
+            printf("VERDICT: %u received\n", verdict);
+          }
           if (verdict >= MAX_DAQ_VERDICT)
             verdict = DAQ_VERDICT_PASS;
           dpdk_intf->stats.verdicts[verdict]++;
