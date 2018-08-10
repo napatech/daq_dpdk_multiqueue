@@ -1,10 +1,10 @@
-# DAQ 2.2.2 with dpdk18.05 multi-queue (RSS) support
+# DAQ 2.2.2 with dpdk18.08 multi-queue (RSS) and HW offload support
 
 The DPDK DAQ has been updated to version 2.2.2 with support for DPDK 18.05.
 
 ## How to setup
 
-1. Download the Napatech DPDK 18.05 and build it
+1. Download the Napatech DPDK 18.08 and build it
 It can be downloaded here: https://github.com/napatech/dpdk/releases
 A desription on how to buld and setup DPDK can be found here: http://dpdk.org/doc/quick-start and here http://dpdk.org/doc/guides/linux_gsg/index.html
 
@@ -13,21 +13,40 @@ A desription on how to buld and setup DPDK can be found here: http://dpdk.org/do
 	```bash
 	export RTE_SDK=<DPDK root directory>
 	```
-
-2. Download or clone this DAQ 2.2.2 modified version:
+2. Enable HW offload
+In the file `daq_dpdk.c` set:
+```c++
+#define USE_HW_OFFLOAD 1
+```
+ 
+3. Download or clone this DAQ 2.2.2 modified version:
 ```bash
 # cd daq-2.2.2
 # ./configure --prefix=/opt/snort 
 # make
 # make install
 ```
-3. Download Snort 3.0 and build/install it. - currently it is only an alpha version that is available.
+4. Download Snort 3.0 and build/install it. - currently it is only an alpha version that is available.
 ```bash
 # ./configure_cmake.sh --prefix=/opt/snort --with-daq-libraries=/opt/snort/lib --with-daq-includes=/opt/snort/include
 # cd build
 # make -j
 # make install
 ```
+
+## HW offload support (inline only)
+HW offload is done when Snort returns verdict command:
+- `DAQ_VERDICT_WHITELIST`
+- `DAQ_VERDICT_BLACKLIST`
+- `DAQ_VERDICT_IGNORE`
+
+`DAQ_VERDICT_WHITELIST` and `DAQ_VERDICT_IGNORE` cause a forward filter to be created. The forward filter will forward packets in hardware between the 2 inline ports. This is done by creating a DPDK rte_flow filter with the action `RTE_FLOW_ACTION_TYPE_PORT_ID`.
+
+`DAQ_VERDICT_BLACKLIST` causes a drop filter to be created. The drop filter will drop packets in hardware. This is done by creating a DPDK rte_flow filter with action `RTE_FLOW_ACTION_TYPE_DROP`.
+
+When the forward and/or the drop filters are created, no packets matching the filter will be transmitted to Snort.
+
+The forward/drop filter has a timeout on 60 seconds. Then the filter will be deleted and Snort will receive packets again. Snort will then remake the filter.
 
 ## How to use
 
