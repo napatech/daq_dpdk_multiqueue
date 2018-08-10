@@ -34,6 +34,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <stdbool.h>
+#include <arpa/inet.h>
+#include <assert.h>
+#include <stddef.h>
+#include <pthread.h>
 
 #include <daq_api.h>
 #include <sfbpf.h>
@@ -44,7 +53,29 @@
 #include <rte_flow.h>
 #include <rte_ethdev.h>
 
-#define DAQ_DPDK_VERSION 18.02
+#include <rte_mbuf.h>
+#include <rte_table_hash.h>
+#include <rte_malloc.h>
+#include <rte_net.h>
+#include <rte_flow.h>
+#include <rte_tailq.h>
+#include <rte_ethdev.h>
+#include <rte_cycles.h>
+#include <rte_ring.h>
+#include <rte_lcore.h>
+#include <rte_atomic.h>
+
+//#define _DEBUG
+
+#ifdef _DEBUG
+#define Debug(printfstr, ...) printf(printfstr, ##__VA_ARGS__)
+#else
+#define Debug(printfstr, ...)
+#endif
+
+#define USE_HW_OFFLOAD 1
+
+#define DAQ_DPDK_VERSION 18.08
 
 #define MBUF_CACHE_SIZE 250
 #define MAX_ARGS 64
@@ -68,16 +99,12 @@ static const struct rte_eth_conf port_conf_default = {
     .mq_mode = ETH_MQ_RX_NONE,
     .max_rx_pkt_len = ETHER_MAX_LEN,
     .split_hdr_size = 0,
-    .header_split   = 0, /* Header Split disabled */
-    .hw_ip_checksum = 0, /* IP checksum offload disabled */
-    .hw_vlan_filter = 0, /* VLAN filtering disabled */
-    .jumbo_frame    = 0, /* Jumbo Frame Support disabled */
-    .hw_strip_crc   = 0,
+    .offloads = 0
   },
   .rx_adv_conf = {
     .rss_conf = {
       .rss_key = NULL,
-      .rss_hf = ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP,
+      .rss_hf = ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP,
     },
   },
   .txmode = {
@@ -162,6 +189,9 @@ static pthread_mutex_t rx_mutex[MAX_DPDK_DEVICES][RTE_ETHDEV_QUEUE_STAT_CNTRS];
 static pthread_mutex_t tx_mutex[MAX_DPDK_DEVICES][RTE_ETHDEV_QUEUE_STAT_CNTRS];
 #endif
 
+#ifdef USE_HW_OFFLOAD
+static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer);
+#endif
 static void dpdk_daq_reset_stats(void *handle);
 
 static int SetupFilter(uint8_t port, uint8_t numQueues, struct rte_flow_error *error) {
@@ -185,7 +215,7 @@ static int SetupFilter(uint8_t port, uint8_t numQueues, struct rte_flow_error *e
 
   memset(&attr, 0, sizeof(attr));
   attr.ingress = 1;
-  attr.priority = 1;
+  attr.priority = 10;
 
   uint32_t actionCount = 0;
   memset(&actions, 0, sizeof(actions));
@@ -227,7 +257,7 @@ static int SetupFilter(uint8_t port, uint8_t numQueues, struct rte_flow_error *e
 static int start_device(Dpdk_Interface_t *dpdk_intf, DpdkDevice *device) {
   struct rte_eth_conf port_conf = port_conf_default;
   int port, queue, ret;
-  uint16_t rx_queues, tx_queues, i;
+  uint16_t rx_queues, tx_queues;
   struct rte_flow_error error;
 
   port = device->port;
@@ -257,7 +287,7 @@ static int start_device(Dpdk_Interface_t *dpdk_intf, DpdkDevice *device) {
   tx_queues = RTE_MIN(device->num_tx_queues, device->max_tx_queues);
 
   if (dpdk_intf->debug) {
-    printf("[%lx] DPDK Start device %s on port %i - with number of rx queues %i and tx queues %i\n", pthread_self(), dpdk_intf->descr, port, rx_queues, tx_queues);
+    printf("[%lx] DPDK Start device %s (%p) on port %i - with number of rx queues %i and tx queues %i\n", pthread_self(), dpdk_intf->descr, device, port, rx_queues, tx_queues);
   }
 
   if (rx_queues <= 1)
@@ -352,7 +382,6 @@ static DpdkDevice* create_rx_device(const char *port_name, uint16_t *rx_queue, c
     if (port == dpdk_devices[i]->port) {
 #ifndef USE_RX_TX_LOCKING
       if (dpdk_devices[i]->num_rx_queues >= dpdk_devices[i]->max_rx_queues) {
-        printf("Error 1\n");
         return NULL;
       }
 #endif
@@ -394,6 +423,7 @@ static DpdkDevice* create_rx_device(const char *port_name, uint16_t *rx_queue, c
   device->port = port;
   device->ref_cnt = 1;
   device->num_rx_queues = 1;
+  *rx_queue =  device->num_rx_queues;
   rte_eth_dev_info_get(port, &inf);
   if (debug) {
     printf("driver name: %s\n", inf.driver_name);
@@ -401,6 +431,7 @@ static DpdkDevice* create_rx_device(const char *port_name, uint16_t *rx_queue, c
     printf("Max Rx queues: %i\n", inf.max_rx_queues);
     printf("Max Tx queues: %i\n", inf.max_tx_queues);
     printf("Daq Port ID    %i\n", device->index);
+    printf("Device         %p\n", device);
   }
 
   device->max_rx_queues = RTE_MIN(RTE_ETHDEV_QUEUE_STAT_CNTRS, inf.max_rx_queues);
@@ -560,7 +591,7 @@ static int dpdk_daq_initialize(const DAQ_Config_t *config, void **ctxt_ptr, char
       rval = DAQ_ERROR_INVAL;
       goto err;
     }
-    ports = rte_eth_dev_count();
+    ports = rte_eth_dev_count_avail();
     if (ports == 0) {
       snprintf(errbuf, errlen, "%s: No Ethernet ports!\n", __FUNCTION__);
       rval = DAQ_ERROR_NODEV;
@@ -710,6 +741,29 @@ static int dpdk_daq_start(void *handle) {
   dpdk_intf->state = DAQ_STATE_STARTED;
   return DAQ_SUCCESS;
 }
+
+#ifdef _DEBUG
+struct {
+  uint64_t count;
+  uint64_t daq_verdict_pass;
+  uint64_t daq_verdict_block;
+  uint64_t daq_verdict_replace;
+  uint64_t daq_verdict_whitelist;
+  uint64_t daq_verdict_blacklist;
+  uint64_t daq_verdict_ignore;
+  uint64_t daq_verdict_retry;
+} packCount = {0,0,0,0,0,0,0,0};
+
+const char *verdict_translation_string[MAX_DAQ_VERDICT] = {
+  "DAQ_VERDICT_PASS",
+  "DAQ_VERDICT_BLOCK",
+  "DAQ_VERDICT_REPLACE",
+  "DAQ_VERDICT_WHITELIST",
+  "DAQ_VERDICT_BLACKLIST",
+  "DAQ_VERDICT_IGNORE",
+  "DAQ_VERDICT_RETRY"
+};
+#endif
 
 static const DAQ_Verdict verdict_translation_table[MAX_DAQ_VERDICT] = {
   DAQ_VERDICT_PASS,       /* DAQ_VERDICT_PASS */
@@ -862,9 +916,52 @@ static int dpdk_daq_acquire(void *handle, int cnt, DAQ_Analysis_Func_t callback,
           verdict = callback(user, &daqhdr, data);
 
 
-          if (verdict != DAQ_VERDICT_PASS) {
-            printf("VERDICT: %u received\n", verdict);
+#ifdef _DEBUGX
+          packCount.count++;
+          switch (verdict)
+          {
+          default:
+            break;
+          case DAQ_VERDICT_PASS:
+            packCount.daq_verdict_pass++;
+            break;
+          case DAQ_VERDICT_BLOCK:
+            packCount.daq_verdict_block++;
+            break;
+          case DAQ_VERDICT_REPLACE:
+            packCount.daq_verdict_replace++;
+            break;
+          case DAQ_VERDICT_WHITELIST:
+            packCount.daq_verdict_whitelist++;
+            break;
+          case DAQ_VERDICT_BLACKLIST:
+            packCount.daq_verdict_blacklist++;
+            break;
+          case DAQ_VERDICT_IGNORE:
+            packCount.daq_verdict_ignore++;
+            break;
+          case DAQ_VERDICT_RETRY:
+            packCount.daq_verdict_retry++;
+            break;
           }
+          if (!(packCount.daq_verdict_pass % 1000)) {
+            Debug("PK %llu - PA %llu - BK %llu - RE %llu - WH %llu - BL %llu - IG %llu - RE %llu\n", (long long unsigned int)packCount.count,
+                                                                                                     (long long unsigned int)packCount.daq_verdict_pass,
+                                                                                                     (long long unsigned int)packCount.daq_verdict_block,
+                                                                                                     (long long unsigned int)packCount.daq_verdict_replace,
+                                                                                                     (long long unsigned int)packCount.daq_verdict_whitelist,
+                                                                                                     (long long unsigned int)packCount.daq_verdict_blacklist,
+                                                                                                     (long long unsigned int)packCount.daq_verdict_ignore,
+                                                                                                     (long long unsigned int)packCount.daq_verdict_retry);
+          }
+#endif
+
+#ifdef USE_HW_OFFLOAD
+          //if (verdict != DAQ_VERDICT_PASS && verdict != DAQ_VERDICT_REPLACE) {
+            Debug("%s - ", verdict_translation_string[verdict]);
+            create_packet_filter(bufs[i], verdict, device->port, peer);
+          //}
+#endif
           if (verdict >= MAX_DAQ_VERDICT)
             verdict = DAQ_VERDICT_PASS;
           dpdk_intf->stats.verdicts[verdict]++;
@@ -1132,5 +1229,265 @@ const DAQ_Module_t dpdk_daq_module_data =
   .hup_post =  NULL,
   .dp_add_dc =  NULL,
 };
+
+/*****************************************/
+/*           Hardware offload            */
+/*****************************************/
+#ifdef USE_HW_OFFLOAD
+struct pkt_meta {
+	struct rte_net_hdr_lens hdr_lens;
+	uint32_t pkt_type;
+  uint8_t ipv;                      //!< IP version
+  uint8_t ipproto;                  //!< IP protocol
+  DAQ_Verdict verdict;
+  union {
+    struct rte_flow_item_ipv4 ipv4;
+    struct rte_flow_item_ipv6 ipv6;
+  } ip;
+  union {
+    struct rte_flow_item_tcp tcp;
+    struct rte_flow_item_udp udp;
+    struct rte_flow_item_sctp sctp;
+  } port;
+};
+
+#ifdef _DEBUG
+  uint32_t Filters = 0;
+#endif
+
+#define IPV4_ADDRESS(a) ((const char *)&a)[0] & 0xFF, ((const char *)&a)[1] & 0xFF, ((const char *)&a)[2] & 0xFF, ((const char *)&a)[3] & 0xFF
+
+static inline int extract_l4(struct pkt_meta *pkt_meta, struct rte_mbuf *mb)
+{
+  void *l4 = rte_pktmbuf_mtod_offset(mb, void *, pkt_meta->hdr_lens.l2_len + pkt_meta->hdr_lens.l3_len);
+
+  if (pkt_meta->pkt_type & RTE_PTYPE_L4_UDP) {
+		const struct udp_hdr *udp_hdr = (const struct udp_hdr*)l4;
+    Debug("UDP: SRC %u, DST %u -", udp_hdr->src_port, udp_hdr->dst_port);
+    pkt_meta->port.udp.hdr.src_port = udp_hdr->src_port;
+    pkt_meta->port.udp.hdr.dst_port = udp_hdr->dst_port;
+	}
+  else if (pkt_meta->pkt_type & RTE_PTYPE_L4_TCP) {
+		const struct tcp_hdr *tcp_hdr = (const struct tcp_hdr*)l4;
+    Debug("TCP: SRC %u, DST %u -", rte_bswap16(tcp_hdr->src_port), rte_bswap16(tcp_hdr->dst_port));
+    pkt_meta->port.tcp.hdr.src_port = tcp_hdr->src_port;
+    pkt_meta->port.tcp.hdr.dst_port = tcp_hdr->dst_port;
+	}
+  else if (pkt_meta->pkt_type & RTE_PTYPE_L4_SCTP) {
+		const struct sctp_hdr *sctp_hdr = (const struct sctp_hdr*)l4;
+    Debug("SCTP: SRC %u, DST %u -", sctp_hdr->src_port, sctp_hdr->dst_port);
+    pkt_meta->port.sctp.hdr.src_port = sctp_hdr->src_port;
+    pkt_meta->port.sctp.hdr.src_port = sctp_hdr->dst_port;
+	}
+  else if (pkt_meta->pkt_type & RTE_PTYPE_L4_ICMP) {
+    Debug("ICMP\n");
+  }
+  else {
+    Debug("UNKNOWN\n");
+		return 1;
+	}
+	return 0;
+}
+
+static inline int extract_ipv4_key(struct pkt_meta *pkt_meta, struct rte_mbuf *mb)
+{
+  const struct ipv4_hdr *ipv4_hdr = rte_pktmbuf_mtod_offset(mb, struct ipv4_hdr *, pkt_meta->hdr_lens.l2_len);
+	pkt_meta->ipv = 4;
+  Debug("SRC: %u.%u.%u.%u, DST: %u.%u.%u.%u - ", IPV4_ADDRESS(ipv4_hdr->src_addr), IPV4_ADDRESS(ipv4_hdr->dst_addr));
+  pkt_meta->ip.ipv4.hdr.src_addr = ipv4_hdr->src_addr;
+  pkt_meta->ip.ipv4.hdr.dst_addr = ipv4_hdr->dst_addr;
+  pkt_meta->ip.ipv4.hdr.next_proto_id = ipv4_hdr->next_proto_id;
+	return extract_l4(pkt_meta, mb);
+}
+
+static inline int extract_ipv6_key(struct pkt_meta *pkt_meta, struct rte_mbuf *mb)
+{
+	struct ipv6_hdr *ipv6_hdr;
+  ipv6_hdr = rte_pktmbuf_mtod_offset(mb, struct ipv6_hdr *, pkt_meta->hdr_lens.l2_len);
+	pkt_meta->ipv = 6;
+  memcpy(pkt_meta->ip.ipv6.hdr.src_addr, ipv6_hdr->src_addr, 16);
+  memcpy(pkt_meta->ip.ipv6.hdr.dst_addr, ipv6_hdr->dst_addr, 16);
+  pkt_meta->ip.ipv6.hdr.proto = ipv6_hdr->proto;
+	return extract_l4(pkt_meta, mb);
+}
+
+static inline int prepare_metadata(struct rte_mbuf *mb, struct pkt_meta *pkt_meta)
+{
+  switch (pkt_meta->pkt_type & (RTE_PTYPE_L3_MASK)) {
+  case RTE_PTYPE_L3_IPV4:
+    Debug("IPV4 packet -");
+		return extract_ipv4_key(pkt_meta, mb);
+	case RTE_PTYPE_L3_IPV6:
+    Debug("IPV6 packet -");
+		return extract_ipv6_key(pkt_meta, mb);
+	default:
+    Debug("Unsupported packet %X - %X\n", pkt_meta->pkt_type, pkt_meta->pkt_type & (RTE_PTYPE_L3_MASK));
+		// Unsupported packet
+		pkt_meta->pkt_type = RTE_PTYPE_UNKNOWN;
+		return 1;
+	}
+	return 0;
+}
+
+struct DetachedData_s
+{
+  struct rte_flow *rte_flow;
+  uint8_t port;
+  uint8_t time;
+};
+
+static int detached_thread(void *(*__start_routine)(void *), void *arg)
+{
+  pthread_attr_t attr;
+  pthread_t threadID;
+  int status;
+
+  if((status = pthread_attr_init(&attr)) == 0) {
+    status = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    if (status == 0)
+      status = pthread_create(&threadID, &attr, __start_routine, arg);
+
+    pthread_attr_destroy(&attr);
+  }
+  return status;
+}
+
+static void *_delete_flow_thread(void *arg)
+{
+  struct rte_flow_error error;
+  struct DetachedData_s *pData = (struct DetachedData_s*)arg;
+  sleep(pData->time);
+  rte_flow_destroy(pData->port, pData->rte_flow, &error);
+#ifdef _DEBUG
+  Filters--;
+  Debug(">>>>>>>>>>>>>>>>>>>>>>>>>>>> _delete_flow_thread: flow deleted %u - %u\n", pData->port, Filters);
+#endif
+  free(pData);
+  return NULL;
+}
+
+static inline int offload_filter_setup(struct pkt_meta *pkt_meta, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer)
+{
+  struct rte_flow_error error;
+  struct rte_flow *rte_flow;
+  struct rte_flow_attr attr;
+  struct rte_flow_item pattern[3];
+  struct rte_flow_action actions[2];
+
+  struct rte_flow_action_port_id id;
+
+  uint32_t actionCount;
+  uint32_t patternCount;
+  int i;
+
+  if (verdict == DAQ_VERDICT_PASS || verdict == DAQ_VERDICT_REPLACE) {
+    Debug("%u - %u\n", port, Filters);
+    return 0;
+  }
+
+
+  if (peer == NULL && (verdict == DAQ_VERDICT_WHITELIST || verdict == DAQ_VERDICT_IGNORE)) {
+    // We do not have any peer, so we cannot forward anything. Do nothing
+    return 0;
+  }
+
+  memset(&attr, 0, sizeof(attr));
+  memset(&actions, 0, sizeof(actions));
+  memset(&pattern, 0, sizeof(pattern));
+
+  attr.ingress = 1;
+  attr.priority = 1;
+
+  actionCount = 0;
+  patternCount = 0;
+
+  if (pkt_meta->ipv == 4) {
+    pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_IPV4;
+    pattern[patternCount].spec = &pkt_meta->ip.ipv4;
+    patternCount++;
+  }
+  else {
+    pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_IPV6;
+    pattern[patternCount].spec = &pkt_meta->ip.ipv6;
+    patternCount++;
+  }
+
+  if (pkt_meta->pkt_type & RTE_PTYPE_L4_UDP) {
+    pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_UDP;
+    pattern[patternCount].spec = &pkt_meta->port.udp;
+    patternCount++;
+  }
+  else if (pkt_meta->pkt_type & RTE_PTYPE_L4_TCP) {
+    pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_TCP;
+    pattern[patternCount].spec = &pkt_meta->port.tcp;
+    patternCount++;
+  }
+  else if (pkt_meta->pkt_type & RTE_PTYPE_L4_SCTP) {
+    pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_SCTP;
+    pattern[patternCount].spec = &pkt_meta->port.sctp;
+    patternCount++;
+  }
+
+  pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_END;
+  patternCount++;
+
+  if (verdict == DAQ_VERDICT_WHITELIST || verdict == DAQ_VERDICT_IGNORE) {
+    id.id = peer->port;
+    actions[actionCount].type = RTE_FLOW_ACTION_TYPE_PORT_ID;
+    actions[actionCount].conf = &id;
+    actionCount++;
+  }
+  else {
+    actions[actionCount].type = RTE_FLOW_ACTION_TYPE_DROP;
+    actionCount++;
+  }
+
+  actions[actionCount].type = RTE_FLOW_ACTION_TYPE_END;
+  actionCount++;
+
+  rte_flow = rte_flow_create(port, &attr, pattern, actions, &error);
+  if (rte_flow == NULL) {
+    Debug("%u - DUPLICATE - %u\n", port, Filters);
+    return 1;
+  }
+#ifdef _DEBUG
+  Filters++;
+
+  if (verdict == DAQ_VERDICT_WHITELIST || verdict == DAQ_VERDICT_IGNORE) {
+    Debug("%u - FORWARD - %u\n", port, Filters);
+  }
+  else {
+    Debug("%u - DROP - %u\n", port, Filters);
+  }
+#endif
+
+  struct DetachedData_s *pData = malloc(sizeof(struct DetachedData_s));
+  if (pData == NULL) {
+    rte_flow_destroy(port, rte_flow, &error);
+    return 1;
+  }
+  pData->rte_flow = rte_flow;
+  pData->time = 60;
+  pData->port = port;
+  detached_thread(_delete_flow_thread, (void *)pData);
+  return 0;
+}
+
+static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer)
+{
+	/* Decode the packet */
+	struct pkt_meta pkt_meta;
+  memset(&pkt_meta, 0, sizeof(struct pkt_meta));
+
+	pkt_meta.pkt_type = rte_net_get_ptype(mb, &pkt_meta.hdr_lens, RTE_PTYPE_L2_MASK | RTE_PTYPE_L3_MASK | RTE_PTYPE_L4_MASK);
+  pkt_meta.verdict = verdict;
+
+	if (prepare_metadata(mb, &pkt_meta) != 0) {
+		return -1;
+	}
+  return offload_filter_setup(&pkt_meta, verdict, port,peer);
+}
+#endif
+
 
 
