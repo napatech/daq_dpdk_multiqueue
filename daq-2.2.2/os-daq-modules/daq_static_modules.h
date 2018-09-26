@@ -45,3 +45,6 @@ extern const DAQ_Module_t pcap_daq_module_data;
 #ifdef BUILD_NETMAP_MODULE
 extern const DAQ_Module_t netmap_daq_module_data;
 #endif
+#ifdef BUILD_DPDK_MODULE
+extern const DAQ_Module_t netmap_daq_module_data;
+#endif
