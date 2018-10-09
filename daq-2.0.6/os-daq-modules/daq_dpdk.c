@@ -65,16 +65,6 @@
 #include <rte_lcore.h>
 #include <rte_atomic.h>
 
-#define _DEBUG
-
-#ifdef _DEBUG
-#define Debug(printfstr, ...) printf(printfstr, ##__VA_ARGS__)
-#else
-#define Debug(printfstr, ...)
-#endif
-
-#define USE_HW_OFFLOAD 1
-
 #define DAQ_DPDK_VERSION 18.08
 
 #define MBUF_CACHE_SIZE 250
@@ -189,9 +179,7 @@ static pthread_mutex_t rx_mutex[MAX_DPDK_DEVICES][RTE_ETHDEV_QUEUE_STAT_CNTRS];
 static pthread_mutex_t tx_mutex[MAX_DPDK_DEVICES][RTE_ETHDEV_QUEUE_STAT_CNTRS];
 #endif
 
-#ifdef USE_HW_OFFLOAD
-static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer);
-#endif
+static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer, uint16_t queue, int debug);
 static void dpdk_daq_reset_stats(void *handle);
 
 static int SetupFilter(uint8_t port, uint8_t numQueues, struct rte_flow_error *error) {
@@ -619,7 +607,8 @@ static int dpdk_daq_initialize(const DAQ_Config_t *config, void **ctxt_ptr, char
   if (first) {
     /* Import the DPDK arguments and other configuration values. */
     for (entry = config->values; entry; entry = entry->next) {
-      if (!strcmp(entry->key, "dpdk_args"))
+      printf("Option: %s.%s\n", entry->key, entry->value);
+      if (!strcmp(entry->key, "dpdk_argc"))
         dpdk_args = entry->value;
       else {
         if (!strcmp(entry->key, "debug"))
@@ -788,29 +777,6 @@ static int dpdk_daq_start(void *handle) {
   return DAQ_SUCCESS;
 }
 
-#ifdef _DEBUG
-struct {
-  uint64_t count;
-  uint64_t daq_verdict_pass;
-  uint64_t daq_verdict_block;
-  uint64_t daq_verdict_replace;
-  uint64_t daq_verdict_whitelist;
-  uint64_t daq_verdict_blacklist;
-  uint64_t daq_verdict_ignore;
-  uint64_t daq_verdict_retry;
-} packCount = {0,0,0,0,0,0,0,0};
-
-const char *verdict_translation_string[MAX_DAQ_VERDICT] = {
-  "PASS",
-  "BLOCK",
-  "REPLACE",
-  "WHITELIST",
-  "BLACKLIST",
-  "IGNORE",
-  "RETRY"
-};
-#endif
-
 static const DAQ_Verdict verdict_translation_table[MAX_DAQ_VERDICT] = {
   DAQ_VERDICT_PASS,       /* DAQ_VERDICT_PASS */
   DAQ_VERDICT_BLOCK,      /* DAQ_VERDICT_BLOCK */
@@ -963,51 +929,9 @@ static int dpdk_daq_acquire(void *handle, int cnt, DAQ_Analysis_Func_t callback,
         if (callback) {
           verdict = callback(user, &daqhdr, data);
 
-#ifdef _DEBUGX
-          packCount.count++;
-          switch (verdict)
-          {
-          default:
-            break;
-          case DAQ_VERDICT_PASS:
-            packCount.daq_verdict_pass++;
-            break;
-          case DAQ_VERDICT_BLOCK:
-            packCount.daq_verdict_block++;
-            break;
-          case DAQ_VERDICT_REPLACE:
-            packCount.daq_verdict_replace++;
-            break;
-          case DAQ_VERDICT_WHITELIST:
-            packCount.daq_verdict_whitelist++;
-            break;
-          case DAQ_VERDICT_BLACKLIST:
-            packCount.daq_verdict_blacklist++;
-            break;
-          case DAQ_VERDICT_IGNORE:
-            packCount.daq_verdict_ignore++;
-            break;
-          case DAQ_VERDICT_RETRY:
-            packCount.daq_verdict_retry++;
-            break;
-          }
-          if (!(packCount.daq_verdict_pass % 1000)) {
-            Debug("PK %llu - PA %llu - BK %llu - RE %llu - WH %llu - BL %llu - IG %llu - RE %llu\n", (long long unsigned int)packCount.count,
-                                                                                                     (long long unsigned int)packCount.daq_verdict_pass,
-                                                                                                     (long long unsigned int)packCount.daq_verdict_block,
-                                                                                                     (long long unsigned int)packCount.daq_verdict_replace,
-                                                                                                     (long long unsigned int)packCount.daq_verdict_whitelist,
-                                                                                                     (long long unsigned int)packCount.daq_verdict_blacklist,
-                                                                                                     (long long unsigned int)packCount.daq_verdict_ignore,
-                                                                                                     (long long unsigned int)packCount.daq_verdict_retry);
-          }
-#endif
+          if (verdict != DAQ_VERDICT_PASS && verdict != DAQ_VERDICT_REPLACE)
+            create_packet_filter(bufs[i], verdict, device->port, peer, dev_queue, dpdk_intf->debug);
 
-#ifdef USE_HW_OFFLOAD
-          //if (verdict != DAQ_VERDICT_PASS && verdict != DAQ_VERDICT_REPLACE) {
-            create_packet_filter(bufs[i], verdict, device->port, peer);
-          //}
-#endif
           if (verdict >= MAX_DAQ_VERDICT)
             verdict = DAQ_VERDICT_PASS;
           dpdk_intf->stats.verdicts[verdict]++;
@@ -1302,26 +1226,34 @@ const DAQ_Module_t dpdk_daq_module_data =
                         (unsigned int)(a[14] & 0xFF), \
                         (unsigned int)(a[15] & 0xFF)
 
+const char *verdict_translation_string[MAX_DAQ_VERDICT] = {
+  "PASS",
+  "BLOCK",
+  "REPLACE",
+  "WHITELIST",
+  "BLACKLIST",
+  "IGNORE",
+  "RETRY"
+};
+
 static void dumpColorMask(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port)
 {
   if (mb->packet_type <= 1) return;
 
-  printf("%s - 0x%X - L3 %u - L4 %u - ", verdict_translation_string[verdict], mb->packet_type, mb->hash.fdir.lo, mb->hash.fdir.hi);
+  printf("%s - 0x%03X - ", verdict_translation_string[verdict], mb->packet_type);
   switch (mb->packet_type & RTE_PTYPE_L3_MASK)
   {
   case RTE_PTYPE_L3_IPV4:
     {
       struct ipv4_hdr *pIPv4_hdr = rte_pktmbuf_mtod_offset(mb, struct ipv4_hdr *, mb->hash.fdir.lo);
-      Debug("IPV4 (%u) SRC: %u.%u.%u.%u, DST: %u.%u.%u.%u - ", mb->hash.fdir.lo & 0xFFFF, IPV4_ADDRESS(pIPv4_hdr->src_addr), IPV4_ADDRESS(pIPv4_hdr->dst_addr));
+      printf("IPV4 (%u) SRC: %u.%u.%u.%u, DST: %u.%u.%u.%u - ", mb->hash.fdir.lo & 0xFFFF, IPV4_ADDRESS(pIPv4_hdr->src_addr), IPV4_ADDRESS(pIPv4_hdr->dst_addr));
       break;
     }
   case RTE_PTYPE_L3_IPV6:
     {
       struct ipv6_hdr *pIPv6_hdr = rte_pktmbuf_mtod_offset(mb, struct ipv6_hdr *, mb->hash.fdir.lo & 0xFFFF);
       printf("IPV6 (%u) SRC: %02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X, DST: %02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X - ",
-             mb->hash.fdir.lo & 0xFFFF,
-             IPV6_ADDRESS(pIPv6_hdr->src_addr),
-             IPV6_ADDRESS(pIPv6_hdr->dst_addr));
+             mb->hash.fdir.lo & 0xFFFF, IPV6_ADDRESS(pIPv6_hdr->src_addr), IPV6_ADDRESS(pIPv6_hdr->dst_addr));
       break;
     }
   }
@@ -1331,33 +1263,27 @@ static void dumpColorMask(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port
   case RTE_PTYPE_L4_SCTP:
     {
       const struct sctp_hdr *sctp_hdr = rte_pktmbuf_mtod_offset(mb, struct sctp_hdr *, mb->hash.fdir.hi);
-      Debug("SCTP (%u): SRC %u, DST %u - ", mb->hash.fdir.hi, rte_bswap16(sctp_hdr->src_port), rte_bswap16(sctp_hdr->dst_port));
+      printf("SCTP (%u): SRC %u, DST %u - ", mb->hash.fdir.hi, rte_bswap16(sctp_hdr->src_port), rte_bswap16(sctp_hdr->dst_port));
       break;
     }
   case RTE_PTYPE_L4_TCP:
     {
       const struct tcp_hdr *tcp_hdr = rte_pktmbuf_mtod_offset(mb, struct tcp_hdr *, mb->hash.fdir.hi);
-      Debug("TCP (%u): SRC %u, DST %u - ", mb->hash.fdir.hi, rte_bswap16(tcp_hdr->src_port), rte_bswap16(tcp_hdr->dst_port));
+      printf("TCP (%u): SRC %u, DST %u - ", mb->hash.fdir.hi, rte_bswap16(tcp_hdr->src_port), rte_bswap16(tcp_hdr->dst_port));
       break;
     }
   case RTE_PTYPE_L4_UDP:
     {
       struct udp_hdr *udp_hdr = rte_pktmbuf_mtod_offset(mb, struct udp_hdr *, mb->hash.fdir.hi);
-      Debug("UDP (%u): SRC %u, DST %u - ", mb->hash.fdir.hi, rte_bswap16(udp_hdr->src_port), rte_bswap16(udp_hdr->dst_port));
+      printf("UDP (%u): SRC %u, DST %u - ", mb->hash.fdir.hi, rte_bswap16(udp_hdr->src_port), rte_bswap16(udp_hdr->dst_port));
       break;
     }
-  case RTE_PTYPE_L4_ICMP:
-     printf("ICMP - ");
-     break;
   }
-  if (verdict == DAQ_VERDICT_PASS || verdict == DAQ_VERDICT_REPLACE)
-    printf("%u\n", port);
-  else
-    printf(" -> ");
 }
 
-static inline int offload_filter_setup(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer)
+static inline int offload_filter_setup(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer, uint16_t queue, int debug)
 {
+  int flowMatcherSupport = 1;
   struct rte_flow_error error;
   struct rte_flow *rte_flow;
   struct rte_flow_attr attr;
@@ -1383,9 +1309,77 @@ static inline int offload_filter_setup(struct rte_mbuf *mb, DAQ_Verdict verdict,
   // Packet must have an known Layer4 protocol
   if ((mb->packet_type & RTE_PTYPE_L4_MASK) == 0) return 0;
 
-  memset(&attr, 0, sizeof(attr));
-  memset(&actions, 0, sizeof(actions));
-  memset(&pattern, 0, sizeof(pattern));
+  if (flowMatcherSupport == 1) {
+    struct rte_flow_5tuple tuple;
+    switch (mb->packet_type & RTE_PTYPE_L3_MASK)
+    {
+    case RTE_PTYPE_L3_IPV4:
+      {
+        struct ipv4_hdr *pIPv4_hdr = rte_pktmbuf_mtod_offset(mb, struct ipv4_hdr *, mb->hash.fdir.lo);
+        tuple.flag = RTE_FLOW_PROGRAM_IPV4;
+        tuple.u.IPv4.src_addr = pIPv4_hdr->src_addr;
+        tuple.u.IPv4.dst_addr = pIPv4_hdr->dst_addr;
+        break;
+      }
+    case RTE_PTYPE_L3_IPV6:
+      {
+        struct ipv6_hdr *pIPv6_hdr = rte_pktmbuf_mtod_offset(mb, struct ipv6_hdr *, mb->hash.fdir.lo);
+        tuple.flag = RTE_FLOW_PROGRAM_IPV6;
+        memcpy(&tuple.u.IPv6.src_addr, pIPv6_hdr->src_addr, 16);
+        memcpy(&tuple.u.IPv6.dst_addr, pIPv6_hdr->dst_addr, 16);
+        break;
+      }
+    }
+
+    switch (mb->packet_type & RTE_PTYPE_L4_MASK)
+    {
+    case RTE_PTYPE_L4_UDP:
+      {
+        struct udp_hdr *udp_hdr = rte_pktmbuf_mtod_offset(mb, struct udp_hdr *, mb->hash.fdir.hi);
+        tuple.src_port = udp_hdr->src_port;
+        tuple.dst_port = udp_hdr->dst_port;
+        tuple.proto = 17;
+        break;
+      }
+    case RTE_PTYPE_L4_TCP:
+      {
+        const struct tcp_hdr *tcp_hdr = rte_pktmbuf_mtod_offset(mb, struct tcp_hdr *, mb->hash.fdir.hi);
+        tuple.src_port = tcp_hdr->src_port;
+        tuple.dst_port = tcp_hdr->dst_port;
+        tuple.proto = 6;
+        break;
+      }
+    case RTE_PTYPE_L4_SCTP:
+      {
+        const struct sctp_hdr *sctp_hdr = rte_pktmbuf_mtod_offset(mb, struct sctp_hdr *, mb->hash.fdir.hi);
+        tuple.src_port = sctp_hdr->src_port;
+        tuple.dst_port = sctp_hdr->dst_port;
+        tuple.proto = 132;
+        break;
+      }
+    }
+    if (verdict == DAQ_VERDICT_WHITELIST || verdict == DAQ_VERDICT_IGNORE) {
+      tuple.flag |= RTE_FLOW_PROGRAM_FORWARD_ACTION;
+      if (debug) {
+        printf("FORWARD - %u->%u\n", port, peer->port);
+      }
+    }
+    else {
+      tuple.flag |= RTE_FLOW_PROGRAM_DROP_ACTION;
+      if (debug) {
+        printf("DROP - %u\n", port);
+      }
+    }
+    tuple.port = peer->port;
+    if (rte_flow_program(port, queue, &tuple, &error) != 0) {
+      printf("Error: Flow error port %u - Msg: %s\n", port, error.message);
+    }
+  }
+  else {
+    printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> ?????????????????????????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
+    memset(&attr, 0, sizeof(attr));
+    memset(&actions, 0, sizeof(actions));
+    memset(&pattern, 0, sizeof(pattern));
 
   attr.ingress = 1;
   attr.priority = 1;
@@ -1470,37 +1464,35 @@ static inline int offload_filter_setup(struct rte_mbuf *mb, DAQ_Verdict verdict,
   pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_END;
   patternCount++;
 
-  if (verdict == DAQ_VERDICT_WHITELIST || verdict == DAQ_VERDICT_IGNORE) {
-    id.id = peer->port;
-    actions[actionCount].type = RTE_FLOW_ACTION_TYPE_PORT_ID;
-    actions[actionCount].conf = &id;
-    actionCount++;
-  }
-  else {
-    actions[actionCount].type = RTE_FLOW_ACTION_TYPE_DROP;
-    actionCount++;
-  }
+    if (verdict == DAQ_VERDICT_WHITELIST || verdict == DAQ_VERDICT_IGNORE) {
+      id.id = peer->port;
+      actions[actionCount].type = RTE_FLOW_ACTION_TYPE_PORT_ID;
+      actions[actionCount].conf = &id;
+      actionCount++;
+      if (debug) {
+        printf("FORWARD - %u->%u\n", port, peer->port);
+      }
+    }
+    else {
+      actions[actionCount].type = RTE_FLOW_ACTION_TYPE_DROP;
+      actionCount++;
+      if (debug) {
+        printf("DROP - %u\n", port);
+      }
+    }
 
   actions[actionCount].type = RTE_FLOW_ACTION_TYPE_END;
   actionCount++;
 
-#ifdef _DEBUG
-  if (verdict == DAQ_VERDICT_WHITELIST || verdict == DAQ_VERDICT_IGNORE) {
-    Debug("%u - FORWARD\n", port);
-  }
-  else {
-    Debug("%u - DROP\n", port);
-  }
-#endif
-
-  rte_flow = rte_flow_create(port, &attr, pattern, actions, &error);
-  if (rte_flow == NULL) {
-    return 1;
+    rte_flow = rte_flow_create(port, &attr, pattern, actions, &error);
+    if (rte_flow == NULL) {
+      return 1;
+    }
   }
   return 0;
 }
 
-static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer)
+static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer, uint16_t queue, int debug)
 {
   if (!(mb->ol_flags & PKT_RX_FDIR_FLX))
     return 1;
@@ -1509,14 +1501,16 @@ static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict,
     return 0;
   }
 
-  dumpColorMask(mb, verdict, port);
+  if (debug) {
+    dumpColorMask(mb, verdict, port);
+  }
 
   if (peer == NULL && (verdict == DAQ_VERDICT_WHITELIST || verdict == DAQ_VERDICT_IGNORE)) {
     // We do not have any peer, so we cannot forward anything. Do nothing
     return 0;
   }
 
-  return offload_filter_setup(mb, verdict, port, peer);
+  return offload_filter_setup(mb, verdict, port, peer, queue, debug);
 }
 
 
