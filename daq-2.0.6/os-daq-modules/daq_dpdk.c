@@ -153,6 +153,7 @@ typedef struct _dpdk_interface
   int snaplen;
   int timeout;
   int debug;
+  int noOffload;
 
 #define DEV_IDX 0
 #define PEER_IDX 1
@@ -564,6 +565,7 @@ static int dpdk_daq_initialize(const DAQ_Config_t *config, void **ctxt_ptr, char
   static char interface_name[1024] = "";
   static uint16_t dev_idx = 0;
   static int debug = 0;
+  static int noOffload = 0;
   static int first = 1, ports = 0;
   static volatile uint32_t threads_in = 0;
 
@@ -608,11 +610,16 @@ static int dpdk_daq_initialize(const DAQ_Config_t *config, void **ctxt_ptr, char
     /* Import the DPDK arguments and other configuration values. */
     for (entry = config->values; entry; entry = entry->next) {
       printf("Option: %s.%s\n", entry->key, entry->value);
-      if (!strcmp(entry->key, "dpdk_argc"))
+      if (!strcmp(entry->key, "dpdk_argc")) {
         dpdk_args = entry->value;
-      else {
-        if (!strcmp(entry->key, "debug"))
+      }
+      if (!strcmp(entry->key, "debug")) {
           debug = 1;
+          printf("Debug mode\n");
+      }
+      if (!strcmp(entry->key, "nooffload")) {
+          noOffload = 1;
+          printf("No HW Offload\n");
       }
     }
 
@@ -638,7 +645,7 @@ static int dpdk_daq_initialize(const DAQ_Config_t *config, void **ctxt_ptr, char
   dev = dpdk_intf->descr;
 
   dpdk_intf->debug = debug;
-
+  dpdk_intf->noOffload = noOffload;
 
   while (dev[dev_idx] != '\0') {
     len = strcspn(&dev[dev_idx], ": ");
@@ -929,7 +936,7 @@ static int dpdk_daq_acquire(void *handle, int cnt, DAQ_Analysis_Func_t callback,
         if (callback) {
           verdict = callback(user, &daqhdr, data);
 
-          if (verdict != DAQ_VERDICT_PASS && verdict != DAQ_VERDICT_REPLACE)
+          if (verdict != DAQ_VERDICT_PASS && verdict != DAQ_VERDICT_REPLACE && !dpdk_intf->noOffload)
             create_packet_filter(bufs[i], verdict, device->port, peer, dev_queue, dpdk_intf->debug);
 
           if (verdict >= MAX_DAQ_VERDICT)
@@ -939,7 +946,7 @@ static int dpdk_daq_acquire(void *handle, int cnt, DAQ_Analysis_Func_t callback,
         }
         dpdk_intf->stats.packets_received++;
         c++;
-      send_packet:
+        send_packet:
 
         if (verdict == DAQ_VERDICT_PASS && peer) {
           tx_burst[tx_num] = bufs[i];
@@ -1376,93 +1383,92 @@ static inline int offload_filter_setup(struct rte_mbuf *mb, DAQ_Verdict verdict,
     }
   }
   else {
-    printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> ?????????????????????????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
     memset(&attr, 0, sizeof(attr));
     memset(&actions, 0, sizeof(actions));
     memset(&pattern, 0, sizeof(pattern));
 
-  attr.ingress = 1;
-  attr.priority = 1;
+    attr.ingress = 1;
+    attr.priority = 1;
 
-  actionCount = 0;
-  patternCount = 0;
+    actionCount = 0;
+    patternCount = 0;
 
-  switch (mb->packet_type & RTE_PTYPE_L3_MASK)
-  {
-  case RTE_PTYPE_L3_IPV4:
+    switch (mb->packet_type & RTE_PTYPE_L3_MASK)
     {
-      struct ipv4_hdr *pIPv4_hdr = rte_pktmbuf_mtod_offset(mb, struct ipv4_hdr *, mb->hash.fdir.lo);
-      memset(&ipv4, 0, sizeof(struct rte_flow_item_ipv4));
-      ipv4.hdr.src_addr = pIPv4_hdr->src_addr;
-      ipv4.hdr.dst_addr = pIPv4_hdr->dst_addr;
-      pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_IPV4;
-      pattern[patternCount].spec = &ipv4;
-      patternCount++;
-      break;
+    case RTE_PTYPE_L3_IPV4:
+      {
+        struct ipv4_hdr *pIPv4_hdr = rte_pktmbuf_mtod_offset(mb, struct ipv4_hdr *, mb->hash.fdir.lo);
+        memset(&ipv4, 0, sizeof(struct rte_flow_item_ipv4));
+        ipv4.hdr.src_addr = pIPv4_hdr->src_addr;
+        ipv4.hdr.dst_addr = pIPv4_hdr->dst_addr;
+      	pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_IPV4;
+        pattern[patternCount].spec = &ipv4;
+      	patternCount++;
+        break;
     }
-  case RTE_PTYPE_L3_IPV6:
-    {
-      struct ipv6_hdr *pIPv6_hdr = rte_pktmbuf_mtod_offset(mb, struct ipv6_hdr *, mb->hash.fdir.lo);
-      memset(&ipv6, 0, sizeof(struct rte_flow_item_ipv6));
-      memcpy(&ipv6.hdr.src_addr, pIPv6_hdr->src_addr, 16);
-      memcpy(&ipv6.hdr.dst_addr, pIPv6_hdr->dst_addr, 16);
-      pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_IPV6;
-      pattern[patternCount].spec = &ipv6;
-      patternCount++;
-      break;
+    case RTE_PTYPE_L3_IPV6:
+      {
+        struct ipv6_hdr *pIPv6_hdr = rte_pktmbuf_mtod_offset(mb, struct ipv6_hdr *, mb->hash.fdir.lo);
+        memset(&ipv6, 0, sizeof(struct rte_flow_item_ipv6));
+        memcpy(&ipv6.hdr.src_addr, pIPv6_hdr->src_addr, 16);
+        memcpy(&ipv6.hdr.dst_addr, pIPv6_hdr->dst_addr, 16);
+        pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_IPV6;
+        pattern[patternCount].spec = &ipv6;
+        patternCount++;
+        break;
+      }
     }
-  }
 
-  switch (mb->packet_type & RTE_PTYPE_L4_MASK)
-  {
-  case RTE_PTYPE_L4_UDP:
+    switch (mb->packet_type & RTE_PTYPE_L4_MASK)
     {
-      struct udp_hdr *udp_hdr = rte_pktmbuf_mtod_offset(mb, struct udp_hdr *, mb->hash.fdir.hi);
-      memset(&udp, 0, sizeof(struct rte_flow_item_udp));
-      udp.hdr.src_port = udp_hdr->src_port;
-      udp.hdr.dst_port = udp_hdr->dst_port;
-      pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_UDP;
-      pattern[patternCount].spec = &udp;
-      patternCount++;
-      break;
+    case RTE_PTYPE_L4_UDP:
+      {
+        struct udp_hdr *udp_hdr = rte_pktmbuf_mtod_offset(mb, struct udp_hdr *, mb->hash.fdir.hi);
+        memset(&udp, 0, sizeof(struct rte_flow_item_udp));
+        udp.hdr.src_port = udp_hdr->src_port;
+        udp.hdr.dst_port = udp_hdr->dst_port;
+      	pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_UDP;
+        pattern[patternCount].spec = &udp;
+      	patternCount++;
+        break;
     }
-  case RTE_PTYPE_L4_TCP:
-    {
-      const struct tcp_hdr *tcp_hdr = rte_pktmbuf_mtod_offset(mb, struct tcp_hdr *, mb->hash.fdir.hi);
-      memset(&tcp, 0, sizeof(struct rte_flow_item_tcp));
-      tcp.hdr.src_port = tcp_hdr->src_port;
-      tcp.hdr.dst_port = tcp_hdr->dst_port;
-      pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_TCP;
-      pattern[patternCount].spec = &tcp;
-      patternCount++;
-      break;
+    case RTE_PTYPE_L4_TCP:
+      {
+        const struct tcp_hdr *tcp_hdr = rte_pktmbuf_mtod_offset(mb, struct tcp_hdr *, mb->hash.fdir.hi);
+        memset(&tcp, 0, sizeof(struct rte_flow_item_tcp));
+        tcp.hdr.src_port = tcp_hdr->src_port;
+        tcp.hdr.dst_port = tcp_hdr->dst_port;
+        pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_TCP;
+        pattern[patternCount].spec = &tcp;
+        patternCount++;
+        break;
+      }
+    case RTE_PTYPE_L4_SCTP:
+      {
+        const struct sctp_hdr *sctp_hdr = rte_pktmbuf_mtod_offset(mb, struct sctp_hdr *, mb->hash.fdir.hi);
+        memset(&sctp, 0, sizeof(struct rte_flow_item_sctp));
+        sctp.hdr.src_port = sctp_hdr->src_port;
+        sctp.hdr.src_port = sctp_hdr->dst_port;
+        pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_SCTP;
+        pattern[patternCount].spec = &sctp;
+        patternCount++;
+        break;
+      }
+    case RTE_PTYPE_L4_ICMP:
+      {
+        const struct icmp_hdr *icmp_hdr = rte_pktmbuf_mtod_offset(mb, struct icmp_hdr *, mb->hash.fdir.hi);
+        memset(&icmp, 0, sizeof(struct icmp_hdr));
+        icmp.hdr.icmp_code = icmp_hdr->icmp_code;
+        icmp.hdr.icmp_type = icmp_hdr->icmp_type;
+        pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_ICMP;
+        pattern[patternCount].spec = &icmp;
+        patternCount++;
+        break;
+      }
     }
-  case RTE_PTYPE_L4_SCTP:
-    {
-      const struct sctp_hdr *sctp_hdr = rte_pktmbuf_mtod_offset(mb, struct sctp_hdr *, mb->hash.fdir.hi);
-      memset(&sctp, 0, sizeof(struct rte_flow_item_sctp));
-      sctp.hdr.src_port = sctp_hdr->src_port;
-      sctp.hdr.src_port = sctp_hdr->dst_port;
-      pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_SCTP;
-      pattern[patternCount].spec = &sctp;
-      patternCount++;
-      break;
-    }
-  case RTE_PTYPE_L4_ICMP:
-    {
-      const struct icmp_hdr *icmp_hdr = rte_pktmbuf_mtod_offset(mb, struct icmp_hdr *, mb->hash.fdir.hi);
-      memset(&icmp, 0, sizeof(struct icmp_hdr));
-      icmp.hdr.icmp_code = icmp_hdr->icmp_code;
-      icmp.hdr.icmp_type = icmp_hdr->icmp_type;
-      pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_ICMP;
-      pattern[patternCount].spec = &icmp;
-      patternCount++;
-      break;
-    }
-  }
 
-  pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_END;
-  patternCount++;
+    pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_END;
+    patternCount++;
 
     if (verdict == DAQ_VERDICT_WHITELIST || verdict == DAQ_VERDICT_IGNORE) {
       id.id = peer->port;
@@ -1481,8 +1487,8 @@ static inline int offload_filter_setup(struct rte_mbuf *mb, DAQ_Verdict verdict,
       }
     }
 
-  actions[actionCount].type = RTE_FLOW_ACTION_TYPE_END;
-  actionCount++;
+    actions[actionCount].type = RTE_FLOW_ACTION_TYPE_END;
+    actionCount++;
 
     rte_flow = rte_flow_create(port, &attr, pattern, actions, &error);
     if (rte_flow == NULL) {

@@ -153,6 +153,7 @@ typedef struct _dpdk_interface
   int snaplen;
   int timeout;
   int debug;
+  int noOffload;
 
 #define DEV_IDX 0
 #define PEER_IDX 1
@@ -251,17 +252,17 @@ static int SetupFilter(uint8_t port, uint8_t numQueues, struct rte_flow_error *e
     patternCount++;
 
     if (numQueues > 1) {
-  rss.func = RTE_ETH_HASH_FUNCTION_SIMPLE_XOR;
-  rss.level = 0;
-  rss.types  = ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP;
-  rss.queue_num = numQueues;
-  for (i = 0; i < numQueues; i++) {
-    queues[i] = i;
-  }
-  rss.queue = queues;
-  actions[actionCount].type = RTE_FLOW_ACTION_TYPE_RSS;
-  actions[actionCount].conf = &rss;
-  actionCount++;
+      rss.func = RTE_ETH_HASH_FUNCTION_SIMPLE_XOR;
+      rss.level = 0;
+      rss.types  = ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP;
+      rss.queue_num = numQueues;
+      for (i = 0; i < numQueues; i++) {
+        queues[i] = i;
+      }
+      rss.queue = queues;
+      actions[actionCount].type = RTE_FLOW_ACTION_TYPE_RSS;
+      actions[actionCount].conf = &rss;
+      actionCount++;
     }
     else {
       queue.index = 0;
@@ -273,12 +274,12 @@ static int SetupFilter(uint8_t port, uint8_t numQueues, struct rte_flow_error *e
     actions[actionCount].type = RTE_FLOW_ACTION_TYPE_FLAG;
     actionCount++;
 
-  actions[actionCount].type = RTE_FLOW_ACTION_TYPE_END;
-  actionCount++;
+    actions[actionCount].type = RTE_FLOW_ACTION_TYPE_END;
+    actionCount++;
 
-  if (rte_flow_create(port, &attr, pattern, actions, error) == NULL) {
-    return -1;
-  }
+    if (rte_flow_create(port, &attr, pattern, actions, error) == NULL) {
+      return -1;
+    }
   }
   return 0;
 }
@@ -564,6 +565,7 @@ static int dpdk_daq_initialize(const DAQ_Config_t *config, void **ctxt_ptr, char
   static char interface_name[1024] = "";
   static uint16_t dev_idx = 0;
   static int debug = 0;
+  static int noOffload = 0;
   static int first = 1, ports = 0;
   static volatile uint32_t threads_in = 0;
 
@@ -608,11 +610,16 @@ static int dpdk_daq_initialize(const DAQ_Config_t *config, void **ctxt_ptr, char
     /* Import the DPDK arguments and other configuration values. */
     for (entry = config->values; entry; entry = entry->next) {
       printf("Option: %s.%s\n", entry->key, entry->value);
-      if (!strcmp(entry->key, "dpdk_argc"))
+      if (!strcmp(entry->key, "dpdk_argc")) {
         dpdk_args = entry->value;
-      else {
-        if (!strcmp(entry->key, "debug"))
+      }
+      if (!strcmp(entry->key, "debug")) {
           debug = 1;
+          printf("Debug mode\n");
+      }
+      if (!strcmp(entry->key, "nooffload")) {
+          noOffload = 1;
+          printf("No HW Offload\n");
       }
     }
 
@@ -638,7 +645,7 @@ static int dpdk_daq_initialize(const DAQ_Config_t *config, void **ctxt_ptr, char
   dev = dpdk_intf->descr;
 
   dpdk_intf->debug = debug;
-
+  dpdk_intf->noOffload = noOffload;
 
   while (dev[dev_idx] != '\0') {
     len = strcspn(&dev[dev_idx], ": ");
@@ -929,7 +936,7 @@ static int dpdk_daq_acquire(void *handle, int cnt, DAQ_Analysis_Func_t callback,
         if (callback) {
           verdict = callback(user, &daqhdr, data);
 
-          if (verdict != DAQ_VERDICT_PASS && verdict != DAQ_VERDICT_REPLACE)
+          if (verdict != DAQ_VERDICT_PASS && verdict != DAQ_VERDICT_REPLACE && !dpdk_intf->noOffload)
             create_packet_filter(bufs[i], verdict, device->port, peer, dev_queue, dpdk_intf->debug);
 
           if (verdict >= MAX_DAQ_VERDICT)
@@ -1242,21 +1249,21 @@ static void dumpColorMask(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port
 
   printf("%s - 0x%03X - ", verdict_translation_string[verdict], mb->packet_type);
   switch (mb->packet_type & RTE_PTYPE_L3_MASK)
-{
+  {
   case RTE_PTYPE_L3_IPV4:
     {
       struct ipv4_hdr *pIPv4_hdr = rte_pktmbuf_mtod_offset(mb, struct ipv4_hdr *, mb->hash.fdir.lo);
       printf("IPV4 (%u) SRC: %u.%u.%u.%u, DST: %u.%u.%u.%u - ", mb->hash.fdir.lo & 0xFFFF, IPV4_ADDRESS(pIPv4_hdr->src_addr), IPV4_ADDRESS(pIPv4_hdr->dst_addr));
       break;
     }
-	case RTE_PTYPE_L3_IPV6:
-{
+  case RTE_PTYPE_L3_IPV6:
+    {
       struct ipv6_hdr *pIPv6_hdr = rte_pktmbuf_mtod_offset(mb, struct ipv6_hdr *, mb->hash.fdir.lo & 0xFFFF);
       printf("IPV6 (%u) SRC: %02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X, DST: %02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X - ",
              mb->hash.fdir.lo & 0xFFFF, IPV6_ADDRESS(pIPv6_hdr->src_addr), IPV6_ADDRESS(pIPv6_hdr->dst_addr));
       break;
     }
-}
+  }
 
   switch (mb->packet_type & RTE_PTYPE_L4_MASK)
   {
@@ -1394,9 +1401,9 @@ static inline int offload_filter_setup(struct rte_mbuf *mb, DAQ_Verdict verdict,
         memset(&ipv4, 0, sizeof(struct rte_flow_item_ipv4));
         ipv4.hdr.src_addr = pIPv4_hdr->src_addr;
         ipv4.hdr.dst_addr = pIPv4_hdr->dst_addr;
-      pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_IPV4;
+      	pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_IPV4;
         pattern[patternCount].spec = &ipv4;
-      patternCount++;
+      	patternCount++;
         break;
     }
     case RTE_PTYPE_L3_IPV6:
@@ -1420,9 +1427,9 @@ static inline int offload_filter_setup(struct rte_mbuf *mb, DAQ_Verdict verdict,
         memset(&udp, 0, sizeof(struct rte_flow_item_udp));
         udp.hdr.src_port = udp_hdr->src_port;
         udp.hdr.dst_port = udp_hdr->dst_port;
-      pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_UDP;
+      	pattern[patternCount].type = RTE_FLOW_ITEM_TYPE_UDP;
         pattern[patternCount].spec = &udp;
-      patternCount++;
+      	patternCount++;
         break;
     }
     case RTE_PTYPE_L4_TCP:
@@ -1498,7 +1505,7 @@ static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict,
 
   if (verdict == DAQ_VERDICT_PASS || verdict == DAQ_VERDICT_REPLACE) {
     return 0;
-	}
+  }
 
   if (debug) {
     dumpColorMask(mb, verdict, port);
