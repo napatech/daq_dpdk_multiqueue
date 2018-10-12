@@ -154,6 +154,7 @@ typedef struct _dpdk_interface
   int timeout;
   int debug;
   int noOffload;
+  int flowMatcherSupport;
 
 #define DEV_IDX 0
 #define PEER_IDX 1
@@ -180,7 +181,7 @@ static pthread_mutex_t rx_mutex[MAX_DPDK_DEVICES][RTE_ETHDEV_QUEUE_STAT_CNTRS];
 static pthread_mutex_t tx_mutex[MAX_DPDK_DEVICES][RTE_ETHDEV_QUEUE_STAT_CNTRS];
 #endif
 
-static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer, uint16_t queue, int debug);
+static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer, uint16_t queue, int debug, int flowMatcherSupport);
 static void dpdk_daq_reset_stats(void *handle);
 
 static int SetupFilter(uint8_t port, uint8_t numQueues, struct rte_flow_error *error) {
@@ -370,6 +371,18 @@ static int start_device(Dpdk_Interface_t *dpdk_intf, DpdkDevice *device) {
     goto err;
   }
 
+  if (rte_flow_program(device->port, 0, NULL, &error) == 0) {
+    dpdk_intf->flowMatcherSupport = 1;
+    if (dpdk_intf->debug) {
+      printf("FlowMatcher supported...\n");
+    }
+  }
+  else {
+    dpdk_intf->flowMatcherSupport = 0;
+    if (dpdk_intf->debug) {
+      printf("FlowMatcher is not supported...\n");
+    }
+  }
 
   device->flags |= DPDKINST_STARTED;
   RELEASE_LOCK(&port_lock[port]);
@@ -604,7 +617,6 @@ static int dpdk_daq_initialize(const DAQ_Config_t *config, void **ctxt_ptr, char
   dpdk_intf->snaplen = config->snaplen;
   dpdk_intf->timeout = (config->timeout > 0) ? (int)config->timeout : -1;
   dpdk_intf->promisc_flag = (config->flags & DAQ_CFG_PROMISC);
-
 
   if (first) {
     /* Import the DPDK arguments and other configuration values. */
@@ -904,8 +916,6 @@ static int dpdk_daq_acquire(void *handle, int cnt, DAQ_Analysis_Func_t callback,
         data = rte_pktmbuf_mtod(bufs[i], void *);
         len = rte_pktmbuf_data_len(bufs[i]);
 
-        dpdk_intf->stats.hw_packets_received++;
-
         if (dpdk_intf->fcode.bf_insns && sfbpf_filter(dpdk_intf->fcode.bf_insns, data, len, len) == 0) {
           ignored_one = 1;
           dpdk_intf->stats.packets_filtered++;
@@ -937,10 +947,11 @@ static int dpdk_daq_acquire(void *handle, int cnt, DAQ_Analysis_Func_t callback,
           verdict = callback(user, &daqhdr, data);
 
           if (verdict != DAQ_VERDICT_PASS && verdict != DAQ_VERDICT_REPLACE && !dpdk_intf->noOffload)
-            create_packet_filter(bufs[i], verdict, device->port, peer, dev_queue, dpdk_intf->debug);
+            create_packet_filter(bufs[i], verdict, device->port, peer, dev_queue, dpdk_intf->debug, dpdk_intf->flowMatcherSupport);
 
           if (verdict >= MAX_DAQ_VERDICT)
             verdict = DAQ_VERDICT_PASS;
+
           dpdk_intf->stats.verdicts[verdict]++;
           verdict = verdict_translation_table[verdict];
         }
@@ -1115,6 +1126,7 @@ static int dpdk_daq_get_stats(void *handle, DAQ_Stats_t *stats) {
   if (dpdk_intf->link[0].dev && dpdk_intf->link[0].rx_queue == 0) {
     rte_eth_stats_get(dpdk_intf->link[0].dev->port, &hwStats);
     stats->hw_packets_dropped = hwStats.imissed;
+    stats->hw_packets_received = hwStats.ipackets;
   }
   return DAQ_SUCCESS;
 }
@@ -1288,9 +1300,8 @@ static void dumpColorMask(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port
   }
 }
 
-static inline int offload_filter_setup(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer, uint16_t queue, int debug)
+static inline int offload_filter_setup(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer, uint16_t queue, int debug, int flowMatcherSupport)
 {
-  int flowMatcherSupport = 1;
   struct rte_flow_error error;
   struct rte_flow *rte_flow;
   struct rte_flow_attr attr;
@@ -1498,7 +1509,7 @@ static inline int offload_filter_setup(struct rte_mbuf *mb, DAQ_Verdict verdict,
   return 0;
 }
 
-static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer, uint16_t queue, int debug)
+static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict, uint8_t port, DpdkDevice *peer, uint16_t queue, int debug, int flowMatcherSupport)
 {
   if (!(mb->ol_flags & PKT_RX_FDIR_FLX))
     return 1;
@@ -1516,7 +1527,7 @@ static inline int create_packet_filter(struct rte_mbuf *mb, DAQ_Verdict verdict,
     return 0;
   }
 
-  return offload_filter_setup(mb, verdict, port, peer, queue, debug);
+  return offload_filter_setup(mb, verdict, port, peer, queue, debug, flowMatcherSupport);
 }
 
 
