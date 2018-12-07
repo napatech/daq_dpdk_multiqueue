@@ -170,6 +170,7 @@ typedef struct _dpdk_interface
 #ifdef DEBUG_SHOW_LOCAL_STATISTICS
   struct _dpdk_interface *next;
 #endif
+
 } Dpdk_Interface_t;
 
 #ifdef DEBUG_SHOW_LOCAL_STATISTICS
@@ -369,19 +370,6 @@ static int start_device(Dpdk_Interface_t *dpdk_intf, DpdkDevice *device) {
   if (ret != 0) {
     DPE(dpdk_intf->errbuf, "%s: Couldn't setup filters for port %d - \"%s\"\n", __FUNCTION__, port, error.message);
     goto err;
-  }
-
-  if (rte_flow_program(device->port, 0, NULL, &error) == 0) {
-    dpdk_intf->flowMatcherSupport = 1;
-    if (dpdk_intf->debug) {
-      printf("FlowMatcher supported...\n");
-    }
-  }
-  else {
-    dpdk_intf->flowMatcherSupport = 0;
-    if (dpdk_intf->debug) {
-      printf("FlowMatcher is not supported...\n");
-    }
   }
 
   device->flags |= DPDKINST_STARTED;
@@ -714,6 +702,8 @@ static int dpdk_daq_initialize(const DAQ_Config_t *config, void **ctxt_ptr, char
     else
       break;
   }
+
+  dpdk_intf->flowMatcherSupport = 1;
 
   if (strlen(dev) <= dev_idx)
     dev_idx = 0;
